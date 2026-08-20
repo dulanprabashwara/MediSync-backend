@@ -68,7 +68,7 @@ class ConsultationAccessServiceTest {
     }
 
     @Test
-    void patientCannotOpenAnotherPatientsConsultation() {
+    void patientCannotAccessAnotherPatientsConsultationOrCancellationReason() {
         AppUser otherUser = new AppUser(UUID.randomUUID(), "other@example.com", "Other", "Patient", null,
                 UserRole.PATIENT, AccountStatus.ACTIVE);
         PatientProfile otherPatient = new PatientProfile(otherUser.getId());
@@ -81,7 +81,7 @@ class ConsultationAccessServiceTest {
     }
 
     @Test
-    void doctorCannotOpenAnotherDoctorsConsultation() {
+    void doctorCannotAccessAnotherDoctorsConsultationOrCancellationReason() {
         AppUser otherUser = new AppUser(UUID.randomUUID(), "other-doctor@example.com", "Other", "Doctor", null,
                 UserRole.DOCTOR, AccountStatus.ACTIVE);
         DoctorProfile otherDoctor = new DoctorProfile(otherUser.getId());
