@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: medisync-api
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:db.cgekbpqwyyfpvcejydet.supabase.co}:${DB_PORT:5432}/${DB_NAME:postgres}?sslmode=require
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+server:
+  port: 8080
+  error:
+    include-message: never
+    include-stacktrace: never
+
+medisync:
+  security:
+    supabase-url: ${SUPABASE_URL:https://cgekbpqwyyfpvcejydet.supabase.co}
+    jwks-url: ${SUPABASE_JWKS_URL:https://cgekbpqwyyfpvcejydet.supabase.co/auth/v1/.well-known/jwks.json}
+    audience: ${SUPABASE_JWT_AUDIENCE:authenticated}
+  cors:
+    frontend-url: ${FRONTEND_URL:http://localhost:3000}
+
+logging:
+  level:
+    org.springframework.security: INFO
+
