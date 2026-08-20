@@ -1,6 +1,7 @@
 package com.medisync.appointment.dto;
 
 import com.medisync.appointment.entity.AppointmentStatus;
+import com.medisync.consultation.entity.ConsultationStatus;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -22,6 +23,9 @@ public record AppointmentResponse(
         OffsetDateTime createdAt,
         OffsetDateTime confirmedAt,
         OffsetDateTime rejectedAt,
-        OffsetDateTime cancelledAt
+        OffsetDateTime cancelledAt,
+        UUID consultationId,
+        ConsultationStatus consultationStatus,
+        boolean chatEnabled
 ) {
 }

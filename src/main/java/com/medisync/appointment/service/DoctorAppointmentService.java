@@ -8,6 +8,11 @@ import com.medisync.availability.entity.AppointmentSlot;
 import com.medisync.availability.entity.SlotStatus;
 import com.medisync.availability.repository.AppointmentSlotRepository;
 import com.medisync.common.dto.PageResponse;
+import com.medisync.consultation.dto.ConsultationEvent;
+import com.medisync.consultation.entity.ConsultationSession;
+import com.medisync.consultation.entity.ConsultationStatus;
+import com.medisync.consultation.repository.ConsultationSessionRepository;
+import com.medisync.consultation.service.ConsultationRealtimePublisher;
 import com.medisync.exception.InvalidRequestException;
 import com.medisync.exception.ResourceConflictException;
 import com.medisync.exception.ResourceNotFoundException;
@@ -40,17 +45,23 @@ public class DoctorAppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final AppointmentSlotRepository slotRepository;
     private final AppointmentResponseMapper responseMapper;
+    private final ConsultationSessionRepository consultationRepository;
+    private final ConsultationRealtimePublisher realtimePublisher;
 
     public DoctorAppointmentService(CurrentUserService currentUserService,
                                     DoctorProfileRepository doctorProfileRepository,
                                     AppointmentRepository appointmentRepository,
                                     AppointmentSlotRepository slotRepository,
-                                    AppointmentResponseMapper responseMapper) {
+                                    AppointmentResponseMapper responseMapper,
+                                    ConsultationSessionRepository consultationRepository,
+                                    ConsultationRealtimePublisher realtimePublisher) {
         this.currentUserService = currentUserService;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appointmentRepository = appointmentRepository;
         this.slotRepository = slotRepository;
         this.responseMapper = responseMapper;
+        this.consultationRepository = consultationRepository;
+        this.realtimePublisher = realtimePublisher;
     }
 
     @Transactional(readOnly = true)
@@ -84,6 +95,13 @@ public class DoctorAppointmentService {
         }
         appointment.confirm();
         slot.book();
+        ConsultationSession consultation = consultationRepository.findByAppointmentId(appointment.getId())
+                .orElseGet(() -> consultationRepository.save(new ConsultationSession(appointment.getId())));
+        if (consultation.getStatus() != ConsultationStatus.SCHEDULED) {
+            throw new ResourceConflictException("The consultation session is in an invalid state");
+        }
+        realtimePublisher.publishAfterCommit(appointment,
+                ConsultationEvent.statusChanged(consultation.getId(), consultation.getStatus()));
         return responseMapper.toResponse(appointment);
     }
 
@@ -109,8 +127,17 @@ public class DoctorAppointmentService {
         if (slot.getStatus() != SlotStatus.BOOKED) {
             throw new ResourceConflictException("The appointment slot is not booked");
         }
+        ConsultationSession consultation = consultationRepository.findByAppointmentIdForUpdate(appointment.getId())
+                .orElse(null);
+        if (consultation != null) {
+            consultation.cancel();
+        }
         appointment.cancelByDoctor(reason.trim());
         slot.release();
+        if (consultation != null) {
+            realtimePublisher.publishAfterCommit(appointment,
+                    ConsultationEvent.statusChanged(consultation.getId(), consultation.getStatus()));
+        }
         return responseMapper.toResponse(appointment);
     }
 

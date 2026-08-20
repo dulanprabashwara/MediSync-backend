@@ -7,6 +7,8 @@ import com.medisync.appointment.entity.AppointmentSymptoms;
 import com.medisync.appointment.repository.AppointmentSymptomsRepository;
 import com.medisync.department.entity.Department;
 import com.medisync.department.repository.DepartmentRepository;
+import com.medisync.consultation.entity.ConsultationSession;
+import com.medisync.consultation.repository.ConsultationSessionRepository;
 import com.medisync.exception.ResourceNotFoundException;
 import com.medisync.hospital.entity.Hospital;
 import com.medisync.hospital.repository.HospitalRepository;
@@ -15,6 +17,9 @@ import com.medisync.specialization.repository.SpecializationRepository;
 import com.medisync.user.entity.AppUser;
 import com.medisync.user.entity.DoctorProfile;
 import com.medisync.user.entity.PatientProfile;
+import com.medisync.user.entity.AccountStatus;
+import com.medisync.user.entity.UserRole;
+import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.repository.AppUserRepository;
 import com.medisync.user.repository.DoctorProfileRepository;
 import com.medisync.user.repository.PatientProfileRepository;
@@ -30,6 +35,7 @@ public class AppointmentResponseMapper {
     private final HospitalRepository hospitalRepository;
     private final DepartmentRepository departmentRepository;
     private final SpecializationRepository specializationRepository;
+    private final ConsultationSessionRepository consultationRepository;
 
     public AppointmentResponseMapper(AppointmentSymptomsRepository symptomsRepository,
                                      PatientProfileRepository patientProfileRepository,
@@ -37,7 +43,8 @@ public class AppointmentResponseMapper {
                                      AppUserRepository appUserRepository,
                                      HospitalRepository hospitalRepository,
                                      DepartmentRepository departmentRepository,
-                                     SpecializationRepository specializationRepository) {
+                                     SpecializationRepository specializationRepository,
+                                     ConsultationSessionRepository consultationRepository) {
         this.symptomsRepository = symptomsRepository;
         this.patientProfileRepository = patientProfileRepository;
         this.doctorProfileRepository = doctorProfileRepository;
@@ -45,6 +52,7 @@ public class AppointmentResponseMapper {
         this.hospitalRepository = hospitalRepository;
         this.departmentRepository = departmentRepository;
         this.specializationRepository = specializationRepository;
+        this.consultationRepository = consultationRepository;
     }
 
     public AppointmentResponse toResponse(Appointment appointment) {
@@ -62,13 +70,24 @@ public class AppointmentResponseMapper {
                 .orElseThrow(() -> new ResourceNotFoundException("Specialization not found"));
         AppointmentSymptoms symptoms = symptomsRepository.findByAppointmentId(appointment.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment symptoms not found"));
+        ConsultationSession consultation = consultationRepository.findByAppointmentId(appointment.getId())
+                .orElse(null);
 
         return new AppointmentResponse(
                 appointment.getId(), appointment.getSlotId(), fullName(patientUser), "Dr. " + fullName(doctorUser),
                 hospital.getName(), department.getName(), specialization.getName(), appointment.getScheduledStart(),
                 appointment.getScheduledEnd(), appointment.getStatus(), AppointmentSymptomsResponse.from(symptoms),
                 appointment.getDoctorRejectionReason(), appointment.getCancellationReason(), appointment.getCreatedAt(),
-                appointment.getConfirmedAt(), appointment.getRejectedAt(), appointment.getCancelledAt());
+                appointment.getConfirmedAt(), appointment.getRejectedAt(), appointment.getCancelledAt(),
+                consultation == null ? null : consultation.getId(),
+                consultation == null ? null : consultation.getStatus(),
+                consultation != null && consultation.getStatus().allowsMessages()
+                        && appointment.getStatus() == com.medisync.appointment.entity.AppointmentStatus.CONFIRMED
+                        && patientUser.getRole() == UserRole.PATIENT
+                        && patientUser.getStatus() == AccountStatus.ACTIVE
+                        && doctorUser.getRole() == UserRole.DOCTOR
+                        && doctorUser.getStatus() == AccountStatus.ACTIVE
+                        && doctor.getVerificationStatus() == VerificationStatus.VERIFIED);
     }
 
     private AppUser user(java.util.UUID id) {

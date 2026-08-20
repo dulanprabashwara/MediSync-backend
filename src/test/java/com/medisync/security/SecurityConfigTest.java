@@ -188,4 +188,20 @@ class SecurityConfigTest {
                         .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    void patientPharmacistAndAdminCannotAccessDoctorClinicalNotes() throws Exception {
+        UUID consultationId = UUID.randomUUID();
+        for (UserRole role : new UserRole[]{UserRole.PATIENT, UserRole.PHARMACIST, UserRole.ADMIN}) {
+            UUID authUserId = UUID.randomUUID();
+            when(appUserRepository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
+                    new AppUser(authUserId, role.name().toLowerCase() + "@example.com", "Test", role.name(), null,
+                            role, AccountStatus.ACTIVE)));
+
+            mockMvc.perform(get("/api/doctor/consultations/{consultationId}/clinical-note", consultationId)
+                            .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+        }
+    }
 }

@@ -50,6 +50,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
+                        .requestMatchers("/ws", "/ws/**").permitAll()
                         .requestMatchers("/api/patient/profile")
                         .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.PATIENT))
                         .requestMatchers("/api/pharmacist/profile")

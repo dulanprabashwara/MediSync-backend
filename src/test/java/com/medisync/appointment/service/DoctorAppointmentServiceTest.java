@@ -7,6 +7,10 @@ import com.medisync.availability.entity.AppointmentSlot;
 import com.medisync.availability.entity.SlotStatus;
 import com.medisync.availability.repository.AppointmentSlotRepository;
 import com.medisync.exception.ResourceConflictException;
+import com.medisync.consultation.entity.ConsultationSession;
+import com.medisync.consultation.entity.ConsultationStatus;
+import com.medisync.consultation.repository.ConsultationSessionRepository;
+import com.medisync.consultation.service.ConsultationRealtimePublisher;
 import com.medisync.user.entity.AccountStatus;
 import com.medisync.user.entity.AppUser;
 import com.medisync.user.entity.DoctorProfile;
@@ -29,6 +33,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class DoctorAppointmentServiceTest {
@@ -38,6 +45,8 @@ class DoctorAppointmentServiceTest {
     @Mock AppointmentRepository appointmentRepository;
     @Mock AppointmentSlotRepository slotRepository;
     @Mock AppointmentResponseMapper responseMapper;
+    @Mock ConsultationSessionRepository consultationRepository;
+    @Mock ConsultationRealtimePublisher realtimePublisher;
 
     private DoctorAppointmentService service;
     private Jwt jwt;
@@ -49,7 +58,7 @@ class DoctorAppointmentServiceTest {
     @BeforeEach
     void setUp() {
         service = new DoctorAppointmentService(currentUserService, doctorProfileRepository, appointmentRepository,
-                slotRepository, responseMapper);
+                slotRepository, responseMapper, consultationRepository, realtimePublisher);
         UUID authId = UUID.randomUUID();
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(authId.toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
@@ -67,12 +76,23 @@ class DoctorAppointmentServiceTest {
     void owningDoctorAcceptsRequestedAppointment() {
         allowDoctorAndLockedAppointment();
         when(slotRepository.findByIdForUpdate(slot.getId())).thenReturn(Optional.of(slot));
+        when(consultationRepository.findByAppointmentId(appointment.getId())).thenReturn(Optional.empty());
+        when(consultationRepository.save(any(ConsultationSession.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         service.accept(jwt, appointment.getId());
 
         assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.CONFIRMED);
         assertThat(appointment.getConfirmedAt()).isNotNull();
         assertThat(slot.getStatus()).isEqualTo(SlotStatus.BOOKED);
+        var session = org.mockito.ArgumentCaptor.forClass(ConsultationSession.class);
+        verify(consultationRepository).save(session.capture());
+        assertThat(session.getValue().getAppointmentId()).isEqualTo(appointment.getId());
+        assertThat(session.getValue().getStatus()).isEqualTo(ConsultationStatus.SCHEDULED);
+
+        assertThatThrownBy(() -> service.accept(jwt, appointment.getId()))
+                .isInstanceOf(ResourceConflictException.class);
+        verify(consultationRepository, times(1)).save(any(ConsultationSession.class));
     }
 
     @Test
@@ -118,8 +138,11 @@ class DoctorAppointmentServiceTest {
     void owningDoctorCancelsConfirmedAppointmentAndReleasesSlot() {
         slot.book();
         appointment.confirm();
+        ConsultationSession consultation = new ConsultationSession(appointment.getId());
         allowDoctorAndLockedAppointment();
         when(slotRepository.findByIdForUpdate(slot.getId())).thenReturn(Optional.of(slot));
+        when(consultationRepository.findByAppointmentIdForUpdate(appointment.getId()))
+                .thenReturn(Optional.of(consultation));
 
         service.cancel(jwt, appointment.getId(), "Emergency leave");
 
@@ -127,6 +150,7 @@ class DoctorAppointmentServiceTest {
         assertThat(appointment.getCancellationReason()).isEqualTo("Emergency leave");
         assertThat(appointment.getCancelledAt()).isNotNull();
         assertThat(slot.getStatus()).isEqualTo(SlotStatus.AVAILABLE);
+        assertThat(consultation.getStatus()).isEqualTo(ConsultationStatus.CANCELLED);
     }
 
     @Test

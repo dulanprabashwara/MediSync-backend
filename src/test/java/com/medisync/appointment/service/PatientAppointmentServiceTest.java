@@ -13,6 +13,10 @@ import com.medisync.availability.entity.SlotStatus;
 import com.medisync.availability.repository.AppointmentSlotRepository;
 import com.medisync.availability.repository.DoctorAvailabilityWindowRepository;
 import com.medisync.config.AppointmentProperties;
+import com.medisync.consultation.entity.ConsultationSession;
+import com.medisync.consultation.entity.ConsultationStatus;
+import com.medisync.consultation.repository.ConsultationSessionRepository;
+import com.medisync.consultation.service.ConsultationRealtimePublisher;
 import com.medisync.department.entity.Department;
 import com.medisync.department.repository.DepartmentRepository;
 import com.medisync.exception.ResourceConflictException;
@@ -65,6 +69,8 @@ class PatientAppointmentServiceTest {
     @Mock AppointmentRepository appointmentRepository;
     @Mock AppointmentSymptomsRepository symptomsRepository;
     @Mock AppointmentResponseMapper responseMapper;
+    @Mock ConsultationSessionRepository consultationRepository;
+    @Mock ConsultationRealtimePublisher realtimePublisher;
 
     private PatientAppointmentService service;
     private Jwt jwt;
@@ -80,7 +86,7 @@ class PatientAppointmentServiceTest {
         service = new PatientAppointmentService(currentUserService, patientProfileRepository, slotRepository,
                 windowRepository, doctorProfileRepository, appUserRepository, hospitalRepository,
                 departmentRepository, specializationRepository, appointmentRepository, symptomsRepository,
-                responseMapper, new AppointmentProperties(0));
+                responseMapper, new AppointmentProperties(0), consultationRepository, realtimePublisher);
         UUID patientAuth = UUID.randomUUID();
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(patientAuth.toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
@@ -190,15 +196,42 @@ class PatientAppointmentServiceTest {
         Appointment appointment = new Appointment(patient.getId(), doctor.getId(), slot.getId(),
                 slot.getStartsAt(), slot.getEndsAt());
         appointment.confirm();
+        ConsultationSession consultation = new ConsultationSession(appointment.getId());
         when(currentUserService.requireRole(jwt, UserRole.PATIENT, AccountStatus.ACTIVE)).thenReturn(patientUser);
         when(patientProfileRepository.findByUserId(patientUser.getId())).thenReturn(Optional.of(patient));
         when(appointmentRepository.findByIdForUpdate(appointment.getId())).thenReturn(Optional.of(appointment));
         when(slotRepository.findByIdForUpdate(slot.getId())).thenReturn(Optional.of(slot));
+        when(consultationRepository.findByAppointmentIdForUpdate(appointment.getId()))
+                .thenReturn(Optional.of(consultation));
 
         service.cancel(jwt, appointment.getId(), null);
 
         assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.CANCELLED_BY_PATIENT);
         assertThat(slot.getStatus()).isEqualTo(SlotStatus.AVAILABLE);
+        assertThat(consultation.getStatus()).isEqualTo(ConsultationStatus.CANCELLED);
+    }
+
+    @Test
+    void patientCannotCancelConsultationThatHasStarted() {
+        slot.reserve();
+        slot.book();
+        Appointment appointment = new Appointment(patient.getId(), doctor.getId(), slot.getId(),
+                slot.getStartsAt(), slot.getEndsAt());
+        appointment.confirm();
+        ConsultationSession consultation = new ConsultationSession(appointment.getId());
+        consultation.start();
+        when(currentUserService.requireRole(jwt, UserRole.PATIENT, AccountStatus.ACTIVE)).thenReturn(patientUser);
+        when(patientProfileRepository.findByUserId(patientUser.getId())).thenReturn(Optional.of(patient));
+        when(appointmentRepository.findByIdForUpdate(appointment.getId())).thenReturn(Optional.of(appointment));
+        when(slotRepository.findByIdForUpdate(slot.getId())).thenReturn(Optional.of(slot));
+        when(consultationRepository.findByAppointmentIdForUpdate(appointment.getId()))
+                .thenReturn(Optional.of(consultation));
+
+        assertThatThrownBy(() -> service.cancel(jwt, appointment.getId(), null))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("cannot be cancelled");
+        assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.CONFIRMED);
+        assertThat(slot.getStatus()).isEqualTo(SlotStatus.BOOKED);
     }
 
     @Test
