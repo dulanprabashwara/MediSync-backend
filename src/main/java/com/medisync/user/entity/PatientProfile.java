@@ -46,4 +46,9 @@ public class PatientProfile {
     void onUpdate() {
         updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
+
+    public UUID getId() { return id; }
+    public UUID getUserId() { return userId; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

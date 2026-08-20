@@ -29,8 +29,9 @@ medisync:
     audience: ${SUPABASE_JWT_AUDIENCE:authenticated}
   cors:
     frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  appointments:
+    minimum-lead-minutes: ${APPOINTMENT_MIN_LEAD_MINUTES:0}
 
 logging:
   level:
     org.springframework.security: INFO
-

@@ -87,7 +87,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     ResponseEntity<ApiErrorResponse> constraintConflict(HttpServletRequest request) {
-        return error(HttpStatus.CONFLICT, "RESOURCE_CONFLICT", "The requested profile already exists", request);
+        return error(HttpStatus.CONFLICT, "RESOURCE_CONFLICT",
+                "The requested operation conflicts with an existing record", request);
     }
 
     @ExceptionHandler(OnboardingRequiredException.class)

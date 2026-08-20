@@ -130,4 +130,62 @@ class SecurityConfigTest {
                         .content("{\"name\":\"Central Hospital\"}"))
                 .andExpect(status().isCreated());
     }
+
+    @Test
+    void doctorCannotUsePatientBookingEndpoint() throws Exception {
+        UUID authUserId = UUID.randomUUID();
+        when(appUserRepository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
+                new AppUser(authUserId, "doctor@example.com", "Nimal", "Perera", null,
+                        UserRole.DOCTOR, AccountStatus.ACTIVE)));
+
+        mockMvc.perform(post("/api/patient/appointments")
+                        .with(jwt().jwt(token -> token.subject(authUserId.toString())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"slotId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void pharmacistCannotUsePatientOrDoctorAppointmentEndpoints() throws Exception {
+        UUID authUserId = UUID.randomUUID();
+        when(appUserRepository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
+                new AppUser(authUserId, "pharmacist@example.com", "Ravi", "Fernando", null,
+                        UserRole.PHARMACIST, AccountStatus.ACTIVE)));
+
+        mockMvc.perform(get("/api/patient/doctors")
+                        .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/doctor/appointments")
+                        .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCannotBypassPatientBookingWorkflow() throws Exception {
+        UUID authUserId = UUID.randomUUID();
+        when(appUserRepository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
+                new AppUser(authUserId, "admin@example.com", "Admin", "User", null,
+                        UserRole.ADMIN, AccountStatus.ACTIVE)));
+
+        mockMvc.perform(post("/api/patient/appointments")
+                        .with(jwt().jwt(token -> token.subject(authUserId.toString())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void patientCannotManageDoctorAvailabilityOrRequests() throws Exception {
+        UUID authUserId = UUID.randomUUID();
+        when(appUserRepository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
+                new AppUser(authUserId, "patient@example.com", "John", "Silva", null,
+                        UserRole.PATIENT, AccountStatus.ACTIVE)));
+
+        mockMvc.perform(get("/api/doctor/availability")
+                        .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/doctor/appointments")
+                        .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
+                .andExpect(status().isForbidden());
+    }
 }
