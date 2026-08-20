@@ -1,6 +1,8 @@
 # MediSync API
 
-Spring Boot REST API for MediSync through Phase 2B. It owns application users, role authorization, professional verification, date-based doctor availability, doctor discovery, appointment requests, and patient-submitted symptoms while Supabase Auth owns credentials and sessions.
+Spring Boot REST API for MediSync through Phase 2B. MediSync is an online patient-care platform designed to connect patients with verified doctors for scheduled online consultations and reduce unnecessary hospital visits. The API owns application users, role authorization, professional verification, date-based doctor availability, doctor discovery, consultation booking, and patient-submitted symptoms while Supabase Auth owns credentials and sessions.
+
+Backend tables, Java types, enums, and API routes retain the established `appointment` terminology. In Phase 2 these records represent scheduled online consultations, not physical hospital visits.
 
 ## Requirements
 
@@ -51,7 +53,7 @@ Authenticated requests must include `Authorization: Bearer <Supabase access toke
 
 Public onboarding accepts only `PATIENT`, `DOCTOR`, and `PHARMACIST`. Patients become `ACTIVE`; doctors and pharmacists become `PENDING_VERIFICATION`. Pending professionals can open their own profile portal but the broader role route policy requires `ACTIVE`, ready for later clinical endpoints.
 
-## Phase 2B API
+## Phase 2B online consultation booking API
 
 | Endpoint | Access | Purpose |
 | --- | --- | --- |
@@ -76,16 +78,26 @@ Booking locks the patient profile and selected slot with `PESSIMISTIC_WRITE`. Th
 
 ## Database migrations
 
-Flyway runs migrations on application startup before Hibernate validates the schema. Hibernate uses `ddl-auto=validate`; it never creates or updates production tables. Migrations create only Phase 1 tables:
+Flyway runs migrations on application startup before Hibernate validates the schema. Hibernate uses `ddl-auto=validate`; it never creates or updates production tables. The migrations are incremental:
 
-- `app_users`
-- `patient_profiles`
-- `doctor_profiles`
-- `pharmacist_profiles`
+- `V1__create_app_users.sql` and `V2__create_role_profiles.sql`: Phase 1 identity and role profiles
+- `V3__phase_2a_doctor_verification_foundation.sql`: Phase 2A professional reference data and doctor verification
+- `V4__phase_2b_availability_and_appointments.sql`: Phase 2B availability and online consultation booking
 
-Phase 2A adds professional reference data and doctor verification. Phase 2B migration `V4__phase_2b_availability_and_appointments.sql` additively creates `doctor_availability_windows`, `appointment_slots`, `appointments`, and `appointment_symptoms`, including status checks, foreign keys, scheduling indexes, duplicate-slot protection, and active-appointment uniqueness. The first administrator is created only through the documented trusted bootstrap process in `docs/admin-bootstrap.md`.
+V4 additively creates `doctor_availability_windows`, `appointment_slots`, `appointments`, and `appointment_symptoms`, including status checks, foreign keys, scheduling indexes, duplicate-slot protection, and active-appointment uniqueness. The first administrator is created only through the documented trusted bootstrap process in `docs/admin-bootstrap.md`.
 
 Do not run destructive Flyway repair/clean operations against the hosted project.
+
+## Product roadmap
+
+- Phase 1: authentication, roles, and security (complete)
+- Phase 2A: reference data, professional profiles, and administrator verification (complete)
+- Phase 2B: availability, doctor discovery, online consultation booking, symptom submission, and booking transitions (complete)
+- Phase 3: online consultation session, secure doctor-patient chat, clinical notes, and consultation status (future)
+- Phase 4: digital prescriptions, patient prescription view, and QR support (future)
+- Phase 5: pharmacist scanning, prescription verification, and dispensing (future)
+
+Secure chat is planned only for a patient and doctor with a confirmed consultation relationship. It is not implemented in Phase 2B. Remote monitoring and formal follow-up scheduling are outside the core roadmap.
 
 ## Test and package
 

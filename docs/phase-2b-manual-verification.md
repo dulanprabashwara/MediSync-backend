@@ -1,13 +1,13 @@
-# Phase 2B manual verification
+# Phase 2B online consultation booking manual verification
 
-Use the hosted development project and existing ACTIVE patient and ACTIVE VERIFIED doctor accounts. Do not reset or delete data. Choose appointment dates far enough in the future to complete every transition.
+Use the hosted development project and existing ACTIVE patient and ACTIVE VERIFIED doctor accounts. Do not reset or delete data. Choose online consultation dates far enough in the future to complete every transition. The API, database, and status checks below deliberately retain the established internal `appointment` terminology.
 
 ## Availability and generated slots
 
 1. Sign in as the verified doctor and open `/doctor/availability`.
-2. Create a future 09:00–11:00 window with 30-minute appointments.
+2. Create a future 09:00–11:00 window with 30-minute online consultations.
 3. Confirm exactly four AVAILABLE slots appear: 09:00, 09:30, 10:00, and 10:30.
-4. Create 09:00–10:20 with 30-minute appointments on another date and confirm the partial 10:00–10:20 period is not generated.
+4. Create 09:00–10:20 with 30-minute online consultations on another date and confirm the partial 10:00–10:20 period is not generated.
 5. Attempt an overlapping window and confirm `409 Conflict` with an understandable message.
 6. Block and unblock an AVAILABLE slot.
 7. Deactivate a window with no requests and confirm its AVAILABLE slots become BLOCKED.
@@ -20,7 +20,7 @@ Use the hosted development project and existing ACTIVE patient and ACTIVE VERIFI
 3. Exercise name, hospital, department, and specialization filters and pagination.
 4. Open the verified doctor and query a date range no longer than 31 days.
 5. Confirm only AVAILABLE future slots from active windows appear; BLOCKED, RESERVED, and BOOKED slots remain hidden.
-6. Select one slot, enter reason for visit and symptoms plus optional duration/notes, and submit.
+6. Select one online consultation time, enter the reason for consultation and symptoms plus optional duration/notes, and submit.
 7. Confirm the appointment is REQUESTED, the slot becomes RESERVED, and the slot immediately disappears from discovery.
 8. Attempt an overlapping appointment for the same patient and confirm `409 Conflict`.
 
