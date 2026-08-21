@@ -9,6 +9,9 @@ import com.medisync.department.repository.DepartmentRepository;
 import com.medisync.exception.ResourceNotFoundException;
 import com.medisync.hospital.entity.Hospital;
 import com.medisync.hospital.repository.HospitalRepository;
+import com.medisync.pharmacy.dto.DispensingStatus;
+import com.medisync.pharmacy.entity.PrescriptionDispensation;
+import com.medisync.pharmacy.repository.PrescriptionDispensationRepository;
 import com.medisync.prescription.dto.DoctorPrescriptionResponse;
 import com.medisync.prescription.dto.PatientPrescriptionDetail;
 import com.medisync.prescription.dto.PatientPrescriptionSummary;
@@ -43,6 +46,7 @@ public class PrescriptionResponseMapper {
     private final HospitalRepository hospitalRepository;
     private final DepartmentRepository departmentRepository;
     private final SpecializationRepository specializationRepository;
+    private final PrescriptionDispensationRepository dispensationRepository;
     private final Clock clock;
 
     public PrescriptionResponseMapper(PrescriptionItemRepository itemRepository,
@@ -54,6 +58,7 @@ public class PrescriptionResponseMapper {
                                       HospitalRepository hospitalRepository,
                                       DepartmentRepository departmentRepository,
                                       SpecializationRepository specializationRepository,
+                                      PrescriptionDispensationRepository dispensationRepository,
                                       Clock clock) {
         this.itemRepository = itemRepository;
         this.consultationRepository = consultationRepository;
@@ -64,40 +69,48 @@ public class PrescriptionResponseMapper {
         this.hospitalRepository = hospitalRepository;
         this.departmentRepository = departmentRepository;
         this.specializationRepository = specializationRepository;
+        this.dispensationRepository = dispensationRepository;
         this.clock = clock;
     }
 
     public DoctorPrescriptionResponse toDoctorResponse(Prescription prescription) {
         RelatedData data = relatedData(prescription);
         List<PrescriptionItemResponse> items = visibleItems(prescription);
+        DispensingData dispensing = dispensingData(prescription);
         return new DoctorPrescriptionResponse(prescription.getId(), prescription.getConsultationId(),
                 data.consultation().getStatus(), prescription.getStatus(), fullName(data.patientUser()),
                 "Dr. " + fullName(data.doctorUser()),
                 data.doctor().getMedicalRegistrationNumber(), data.hospital().getName(), data.department().getName(),
                 data.specialization().getName(), data.appointment().getScheduledStart(), prescription.getValidityDays(),
                 visibleGeneralInstructions(prescription), items, prescription.getIssuedAt(), prescription.getValidUntil(),
-                expired(prescription), prescription.getCancelledAt(), prescription.getCancellationReason(),
+                expired(prescription), dispensing.status(), dispensing.dispensedAt(), dispensing.pharmacyName(),
+                prescription.getCancelledAt(), prescription.getCancellationReason(),
                 prescription.getCreatedAt(), prescription.getUpdatedAt());
     }
 
     public PatientPrescriptionSummary toPatientSummary(Prescription prescription) {
         RelatedData data = relatedData(prescription);
+        DispensingData dispensing = dispensingData(prescription);
         return new PatientPrescriptionSummary(prescription.getId(), prescription.getConsultationId(),
                 "Dr. " + fullName(data.doctorUser()), data.specialization().getName(), data.hospital().getName(),
                 prescription.getIssuedAt(), prescription.getValidUntil(), prescription.getStatus(),
-                expired(prescription), prescription.getStatus() == PrescriptionStatus.CANCELLED
+                expired(prescription), dispensing.status(), dispensing.dispensedAt(), dispensing.pharmacyName(),
+                prescription.getStatus() == PrescriptionStatus.CANCELLED
                         ? 0 : itemRepository.countByPrescriptionId(prescription.getId()));
     }
 
     public PatientPrescriptionDetail toPatientDetail(Prescription prescription) {
         RelatedData data = relatedData(prescription);
         boolean expired = expired(prescription);
-        boolean generationAllowed = prescription.getStatus() == PrescriptionStatus.ISSUED && !expired;
+        DispensingData dispensing = dispensingData(prescription);
+        boolean generationAllowed = prescription.getStatus() == PrescriptionStatus.ISSUED && !expired
+                && dispensing.status() == DispensingStatus.NOT_DISPENSED;
         return new PatientPrescriptionDetail(prescription.getId(), prescription.getConsultationId(),
                 fullName(data.patientUser()), "Dr. " + fullName(data.doctorUser()),
                 data.doctor().getMedicalRegistrationNumber(), data.hospital().getName(), data.department().getName(),
                 data.specialization().getName(), data.appointment().getScheduledStart(), prescription.getIssuedAt(),
                 prescription.getValidUntil(), prescription.getStatus(), expired,
+                dispensing.status(), dispensing.dispensedAt(), dispensing.pharmacyName(),
                 visibleGeneralInstructions(prescription), visibleItems(prescription),
                 prescription.getCancellationReason(), prescription.getCancelledAt(), generationAllowed);
     }
@@ -119,6 +132,15 @@ public class PrescriptionResponseMapper {
 
     private boolean expired(Prescription prescription) {
         return prescription.getValidUntil() != null && !OffsetDateTime.now(clock).isBefore(prescription.getValidUntil());
+    }
+
+    private DispensingData dispensingData(Prescription prescription) {
+        PrescriptionDispensation dispensation = dispensationRepository.findByPrescriptionId(prescription.getId())
+                .orElse(null);
+        return dispensation == null
+                ? new DispensingData(DispensingStatus.NOT_DISPENSED, null, null)
+                : new DispensingData(DispensingStatus.DISPENSED, dispensation.getDispensedAt(),
+                dispensation.getPharmacyNameSnapshot());
     }
 
     private RelatedData relatedData(Prescription prescription) {
@@ -156,4 +178,6 @@ public class PrescriptionResponseMapper {
                                DoctorProfile doctor, PatientProfile patient,
                                AppUser doctorUser, AppUser patientUser, Hospital hospital, Department department,
                                Specialization specialization) {}
+
+    private record DispensingData(DispensingStatus status, OffsetDateTime dispensedAt, String pharmacyName) {}
 }

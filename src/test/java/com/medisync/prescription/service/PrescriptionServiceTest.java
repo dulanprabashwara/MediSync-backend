@@ -5,6 +5,7 @@ import com.medisync.consultation.entity.ConsultationSession;
 import com.medisync.consultation.entity.ConsultationStatus;
 import com.medisync.consultation.service.ConsultationAccessService;
 import com.medisync.exception.ResourceConflictException;
+import com.medisync.pharmacy.repository.PrescriptionDispensationRepository;
 import com.medisync.prescription.dto.PrescriptionDraftRequest;
 import com.medisync.prescription.dto.PrescriptionItemRequest;
 import com.medisync.prescription.entity.Prescription;
@@ -47,6 +48,7 @@ class PrescriptionServiceTest {
     @Mock PrescriptionRepository prescriptionRepository;
     @Mock PrescriptionItemRepository itemRepository;
     @Mock PrescriptionQrTokenRepository tokenRepository;
+    @Mock PrescriptionDispensationRepository dispensationRepository;
     @Mock PrescriptionAccessService accessService;
     @Mock ConsultationAccessService consultationAccessService;
     @Mock PrescriptionResponseMapper mapper;
@@ -59,7 +61,8 @@ class PrescriptionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PrescriptionService(prescriptionRepository, itemRepository, tokenRepository, accessService,
+        service = new PrescriptionService(prescriptionRepository, itemRepository, tokenRepository,
+                dispensationRepository, accessService,
                 consultationAccessService, mapper, tokenGenerator, tokenHasher,
                 Clock.fixed(now.toInstant(), ZoneId.of("UTC")));
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(UUID.randomUUID().toString())
@@ -157,14 +160,15 @@ class PrescriptionServiceTest {
         var context = context(ConsultationStatus.IN_PROGRESS);
         Prescription prescription = prescription(context);
         prescription.issue(now.minusDays(1));
-        when(accessService.requirePatientPrescription(jwt, prescription.getId(), true))
+        when(accessService.requirePatient(jwt)).thenReturn(context.patient());
+        when(accessService.requirePatientPrescription(context.patient(), prescription.getId(), true))
                 .thenReturn(new PrescriptionAccessService.PatientPrescriptionAccess(
                         prescription, context.patient()));
         when(tokenGenerator.generateToken()).thenReturn("raw-token-A", "raw-token-B");
         when(tokenGenerator.payload(any())).thenAnswer(invocation -> "MEDISYNC:RX:" + invocation.getArgument(0));
         when(tokenRepository.existsByTokenHash(any())).thenReturn(false);
         AtomicReference<PrescriptionQrToken> stored = new AtomicReference<>();
-        when(tokenRepository.findByPrescriptionId(prescription.getId())).thenAnswer(invocation ->
+        when(tokenRepository.findByPrescriptionIdForUpdate(prescription.getId())).thenAnswer(invocation ->
                 Optional.ofNullable(stored.get()));
         when(tokenRepository.saveAndFlush(any(PrescriptionQrToken.class))).thenAnswer(invocation -> {
             stored.set(invocation.getArgument(0));
@@ -189,17 +193,43 @@ class PrescriptionServiceTest {
         Prescription cancelled = prescription(context);
         cancelled.issue(now.minusDays(1));
         cancelled.cancel("Changed treatment", now);
-        when(accessService.requirePatientPrescription(jwt, cancelled.getId(), true))
+        when(accessService.requirePatient(jwt)).thenReturn(context.patient());
+        when(accessService.requirePatientPrescription(context.patient(), cancelled.getId(), true))
                 .thenReturn(new PrescriptionAccessService.PatientPrescriptionAccess(cancelled, context.patient()));
         assertThatThrownBy(() -> service.generatePatientQr(jwt, cancelled.getId()))
                 .isInstanceOf(ResourceConflictException.class);
 
         Prescription expired = prescription(context);
         expired.issue(now.minusDays(31));
-        when(accessService.requirePatientPrescription(jwt, expired.getId(), true))
+        when(accessService.requirePatientPrescription(context.patient(), expired.getId(), true))
                 .thenReturn(new PrescriptionAccessService.PatientPrescriptionAccess(expired, context.patient()));
         assertThatThrownBy(() -> service.generatePatientQr(jwt, expired.getId()))
                 .isInstanceOf(ResourceConflictException.class);
+    }
+
+    @Test
+    void dispensedPrescriptionCannotGenerateQrOrBeCancelled() {
+        var context = context(ConsultationStatus.IN_PROGRESS);
+        Prescription prescription = prescription(context);
+        prescription.issue(now.minusDays(1));
+        when(dispensationRepository.existsByPrescriptionId(prescription.getId())).thenReturn(true);
+        when(accessService.requirePatient(jwt)).thenReturn(context.patient());
+        when(accessService.requirePatientPrescription(context.patient(), prescription.getId(), true))
+                .thenReturn(new PrescriptionAccessService.PatientPrescriptionAccess(prescription, context.patient()));
+
+        assertThatThrownBy(() -> service.generatePatientQr(jwt, prescription.getId()))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("already been dispensed");
+
+        when(accessService.requireDoctor(jwt)).thenReturn(context.doctor());
+        when(accessService.requireDoctorPrescription(context.doctor(), prescription.getId(), true))
+                .thenReturn(new PrescriptionAccessService.DoctorPrescriptionAccess(prescription, context.doctor()));
+        when(consultationAccessService.requireDoctor(jwt, prescription.getConsultationId(), true))
+                .thenReturn(context);
+        assertThatThrownBy(() -> service.cancel(jwt, prescription.getId(), "Treatment changed"))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("dispensed prescription");
+        assertThat(prescription.getStatus()).isEqualTo(PrescriptionStatus.ISSUED);
     }
 
     private void allowDoctorPrescription(Prescription prescription,

@@ -2,6 +2,7 @@ package com.medisync.prescription.dto;
 
 import com.medisync.prescription.entity.PrescriptionStatus;
 import com.medisync.consultation.entity.ConsultationStatus;
+import com.medisync.pharmacy.dto.DispensingStatus;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -25,6 +26,9 @@ public record DoctorPrescriptionResponse(
         OffsetDateTime issuedAt,
         OffsetDateTime validUntil,
         boolean expired,
+        DispensingStatus dispensingStatus,
+        OffsetDateTime dispensedAt,
+        String dispensingPharmacy,
         OffsetDateTime cancelledAt,
         String cancellationReason,
         OffsetDateTime createdAt,

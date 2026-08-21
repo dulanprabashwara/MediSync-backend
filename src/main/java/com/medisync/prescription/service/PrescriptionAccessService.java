@@ -55,6 +55,11 @@ public class PrescriptionAccessService {
 
     public DoctorPrescriptionAccess requireDoctorPrescription(Jwt jwt, UUID prescriptionId, boolean forUpdate) {
         DoctorProfile doctor = requireDoctor(jwt);
+        return requireDoctorPrescription(doctor, prescriptionId, forUpdate);
+    }
+
+    public DoctorPrescriptionAccess requireDoctorPrescription(DoctorProfile doctor, UUID prescriptionId,
+                                                               boolean forUpdate) {
         Prescription prescription = (forUpdate
                 ? prescriptionRepository.findByIdForUpdate(prescriptionId)
                 : prescriptionRepository.findById(prescriptionId))
@@ -71,6 +76,11 @@ public class PrescriptionAccessService {
 
     public PatientPrescriptionAccess requirePatientPrescription(Jwt jwt, UUID prescriptionId, boolean forUpdate) {
         PatientProfile patient = requirePatient(jwt);
+        return requirePatientPrescription(patient, prescriptionId, forUpdate);
+    }
+
+    public PatientPrescriptionAccess requirePatientPrescription(PatientProfile patient, UUID prescriptionId,
+                                                                 boolean forUpdate) {
         Prescription prescription = (forUpdate
                 ? prescriptionRepository.findByIdForUpdate(prescriptionId)
                 : prescriptionRepository.findById(prescriptionId))

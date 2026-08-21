@@ -8,6 +8,7 @@ import com.medisync.department.entity.Department;
 import com.medisync.department.repository.DepartmentRepository;
 import com.medisync.hospital.entity.Hospital;
 import com.medisync.hospital.repository.HospitalRepository;
+import com.medisync.pharmacy.repository.PrescriptionDispensationRepository;
 import com.medisync.prescription.entity.Prescription;
 import com.medisync.prescription.entity.PrescriptionStatus;
 import com.medisync.prescription.repository.PrescriptionItemRepository;
@@ -49,6 +50,7 @@ class PrescriptionResponseMapperTest {
         HospitalRepository hospitalRepository = mock(HospitalRepository.class);
         DepartmentRepository departmentRepository = mock(DepartmentRepository.class);
         SpecializationRepository specializationRepository = mock(SpecializationRepository.class);
+        PrescriptionDispensationRepository dispensationRepository = mock(PrescriptionDispensationRepository.class);
 
         AppUser patientUser = new AppUser(UUID.randomUUID(), "patient@example.com", "Mala", "Silva", null,
                 UserRole.PATIENT, AccountStatus.ACTIVE);
@@ -84,7 +86,7 @@ class PrescriptionResponseMapperTest {
         when(specializationRepository.findById(specialization.getId())).thenReturn(Optional.of(specialization));
         PrescriptionResponseMapper mapper = new PrescriptionResponseMapper(itemRepository, consultationRepository,
                 appointmentRepository, doctorRepository, patientRepository, userRepository, hospitalRepository,
-                departmentRepository, specializationRepository,
+                departmentRepository, specializationRepository, dispensationRepository,
                 Clock.fixed(now.toInstant(), ZoneId.of("UTC")));
 
         var patientResponse = mapper.toPatientDetail(prescription);

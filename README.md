@@ -1,6 +1,6 @@
 # MediSync API
 
-Spring Boot API for MediSync through Phase 4. MediSync is an online patient-care platform designed to connect patients with verified doctors for scheduled online consultations and reduce unnecessary hospital visits. The API owns application users, role authorization, professional verification, date-based doctor availability, doctor discovery, consultation booking, consultation lifecycle, persistent chat, private clinical notes, and digital prescriptions while Supabase Auth owns credentials and sessions.
+Spring Boot API for the complete MediSync core workflow through Phase 5. MediSync connects patients with verified doctors for scheduled online consultations and carries an issued prescription through verified-pharmacist dispensing. The API owns application users, role authorization, professional verification, availability, booking, consultation lifecycle, persistent chat, private clinical notes, digital prescriptions, hashed QR verification, and dispensing records while Supabase Auth owns credentials and sessions.
 
 Backend tables, Java types, enums, and API routes retain the established `appointment` terminology. In Phase 2 these records represent scheduled online consultations, not physical hospital visits.
 
@@ -114,6 +114,26 @@ Issued prescriptions are immutable. A consultation cannot be completed while it 
 
 QR payloads have the form `MEDISYNC:RX:<opaque-token>` and contain no identity or clinical data. The patient generates them on demand from a 256-bit `SecureRandom` token. PostgreSQL stores only the lowercase SHA-256 hash; the raw token is returned once and is neither persisted nor reconstructed by detail endpoints. Regeneration replaces the current hash and invalidates the previous QR. Phase 4 has no public or pharmacist verification endpoint.
 
+## Phase 5 pharmacist verification and dispensing API
+
+| Endpoint | Access | Purpose |
+| --- | --- | --- |
+| `GET/PUT /api/pharmacist/professional-profile` | Owning pending or active pharmacist | Read or update professional registration and pharmacy data |
+| `POST /api/pharmacist/professional-profile/submit-verification` | Owning pharmacist | Submit a complete profile for administrator review |
+| `GET /api/admin/pharmacists/pending` | ACTIVE admin | List submitted pharmacist profiles |
+| `GET /api/admin/pharmacists/{id}` | ACTIVE admin | Review one pharmacist submission |
+| `POST /api/admin/pharmacists/{id}/verify` | ACTIVE admin | Transactionally verify and activate the pharmacist |
+| `POST /api/admin/pharmacists/{id}/reject` | ACTIVE admin | Reject with required feedback |
+| `POST /api/pharmacist/prescriptions/verify` | ACTIVE VERIFIED pharmacist | Hash a POST-body QR token and return dispensing-safe prescription data without mutation |
+| `POST /api/pharmacist/prescriptions/dispense` | ACTIVE VERIFIED pharmacist | Reverify under locks, create the single dispensing record, and revoke the QR |
+| `GET /api/pharmacist/dispensations[/{id}]` | Owning ACTIVE VERIFIED pharmacist | Paginated own history or an owned immutable detail |
+
+Verification and dispensing accept only `qrPayload` in an authenticated POST body. They never accept a prescription, patient, doctor, or pharmacist ID as authority. The payload parser validates the `MEDISYNC:RX:` prefix and 256-bit URL-safe token format; the existing SHA-256 component derives `token_hash` for lookup. Unknown and rotated credentials receive a generic invalid response. A known dispensed credential returns only minimal fulfillment metadata.
+
+Dispensing is whole-prescription only. The transaction locks the QR-token row and prescription, rechecks token revocation/expiry and prescription state, rejects an existing dispensation, inserts one `prescription_dispensations` record, and revokes the QR. The database unique constraint on `prescription_id` independently prevents reuse. After dispensing, patient QR generation and doctor cancellation both return a conflict. Prescription status remains `DRAFT`, `ISSUED`, or `CANCELLED`; `DISPENSED` is derived from the fulfillment record.
+
+Pharmacy DTOs contain only patient display name, doctor professional identity, hospital/specialization, prescription dates, medicine instructions, and required fulfillment metadata. Symptoms, consultation reasons, chat, private clinical notes, authentication identifiers, raw tokens, and token hashes are never returned.
+
 Availability creation and normal availability APIs use the injectable server `Clock`: a window must start strictly in the future, fully expired windows and elapsed doctor slots are filtered without deleting history, patient slots must also satisfy the configured lead time, and booking rechecks that rule while holding the slot lock.
 
 ## Database migrations
@@ -126,6 +146,7 @@ Flyway runs migrations on application startup before Hibernate validates the sch
 - `V5__phase_3_online_consultations_and_chat.sql`: Phase 3 consultation sessions, persistent chat, and doctor-only clinical notes
 - `V6__phase_4_digital_prescriptions_and_qr.sql`: Phase 4 prescription lifecycle, ordered items, and opaque QR tokens
 - `V7__phase_4_security_and_availability_hardening.sql`: revokes legacy QR credentials, removes raw-token storage, and adds unique SHA-256 hash storage
+- `V8__phase_5_pharmacist_verification_and_dispensing.sql`: additively extends pharmacist verification and creates one-per-prescription dispensing records
 
 V5 additively creates `consultation_sessions`, `consultation_messages`, and `consultation_clinical_notes`, including lifecycle, ownership, content, and uniqueness constraints. It safely creates one `SCHEDULED` session for each existing `CONFIRMED` appointment that does not already have one, without changing the appointment. The first administrator is created only through the documented trusted bootstrap process in `docs/admin-bootstrap.md`.
 
@@ -137,8 +158,20 @@ Do not run destructive Flyway repair/clean operations against the hosted project
 - Phase 2A: reference data, professional profiles, and administrator verification (complete)
 - Phase 2B: availability, doctor discovery, online consultation booking, symptom submission, and booking transitions (complete)
 - Phase 3: online consultation session, secure doctor-patient chat, private clinical notes, and consultation status (complete)
-- Phase 4: digital prescriptions, patient prescription view, and QR support (current)
-- Phase 5: Pharmacist QR Scanning, Prescription Verification, Medicine Dispensing, and Dispensing History (future)
+- Phase 4: digital prescriptions, patient prescription view, and hashed on-demand QR support (complete)
+- Phase 5: pharmacist verification, QR scanning and verification, medicine dispensing, reuse prevention, and dispensing history (complete)
+
+MediSync core workflow:
+
+```text
+Patient consultation → issued prescription → patient generates QR
+        → verified pharmacist scans → Spring Boot hashes token
+        → PostgreSQL token_hash lookup → safe prescription review
+        → locked dispensing transaction → record created + QR revoked
+        → patient/doctor see Dispensed → pharmacist sees owned history
+```
+
+**MEDISYNC CORE PROJECT COMPLETE** after authenticated browser acceptance succeeds.
 
 Remote monitoring and formal follow-up scheduling are outside the core roadmap.
 
@@ -152,3 +185,4 @@ mvn package
 Unit and MVC security tests do not require the production database. Running the full application requires `DB_PASSWORD` and network access to hosted PostgreSQL and the Supabase JWKS endpoint.
 
 Use `docs/phase-2b-manual-verification.md` for the Phase 2 booking regression checklist and `docs/phase-3-manual-verification.md` for consultation lifecycle, live chat, ownership, clinical-note privacy, and post-completion checks.
+Use `docs/phase-5-manual-verification.md` for pharmacist verification, QR scanning, dispensing, single-use protection, derived status, and final core regression.

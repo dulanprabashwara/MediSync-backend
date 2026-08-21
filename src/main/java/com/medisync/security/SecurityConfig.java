@@ -55,6 +55,8 @@ public class SecurityConfig {
                         .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.PATIENT))
                         .requestMatchers("/api/pharmacist/profile")
                         .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.PHARMACIST, true))
+                        .requestMatchers("/api/pharmacist/professional-profile", "/api/pharmacist/professional-profile/**")
+                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.PHARMACIST, true))
                         .requestMatchers("/api/admin/profile")
                         .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.ADMIN))
                         .requestMatchers("/api/reference/**").authenticated()

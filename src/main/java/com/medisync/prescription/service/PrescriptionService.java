@@ -5,6 +5,7 @@ import com.medisync.consultation.entity.ConsultationStatus;
 import com.medisync.consultation.service.ConsultationAccessService;
 import com.medisync.exception.InvalidRequestException;
 import com.medisync.exception.ResourceConflictException;
+import com.medisync.pharmacy.repository.PrescriptionDispensationRepository;
 import com.medisync.prescription.dto.DoctorPrescriptionResponse;
 import com.medisync.prescription.dto.PatientPrescriptionDetail;
 import com.medisync.prescription.dto.PatientPrescriptionSummary;
@@ -41,6 +42,7 @@ public class PrescriptionService {
     private final PrescriptionRepository prescriptionRepository;
     private final PrescriptionItemRepository itemRepository;
     private final PrescriptionQrTokenRepository tokenRepository;
+    private final PrescriptionDispensationRepository dispensationRepository;
     private final PrescriptionAccessService accessService;
     private final ConsultationAccessService consultationAccessService;
     private final PrescriptionResponseMapper mapper;
@@ -51,6 +53,7 @@ public class PrescriptionService {
     public PrescriptionService(PrescriptionRepository prescriptionRepository,
                                PrescriptionItemRepository itemRepository,
                                PrescriptionQrTokenRepository tokenRepository,
+                               PrescriptionDispensationRepository dispensationRepository,
                                PrescriptionAccessService accessService,
                                ConsultationAccessService consultationAccessService,
                                PrescriptionResponseMapper mapper,
@@ -60,6 +63,7 @@ public class PrescriptionService {
         this.prescriptionRepository = prescriptionRepository;
         this.itemRepository = itemRepository;
         this.tokenRepository = tokenRepository;
+        this.dispensationRepository = dispensationRepository;
         this.accessService = accessService;
         this.consultationAccessService = consultationAccessService;
         this.mapper = mapper;
@@ -142,9 +146,14 @@ public class PrescriptionService {
 
     @Transactional
     public DoctorPrescriptionResponse cancel(Jwt jwt, UUID prescriptionId, String reason) {
-        var access = accessService.requireDoctorPrescription(jwt, prescriptionId, true);
+        var doctor = accessService.requireDoctor(jwt);
+        var lockedToken = tokenRepository.findByPrescriptionIdForUpdate(prescriptionId);
+        var access = accessService.requireDoctorPrescription(doctor, prescriptionId, true);
         var context = consultationAccessService.requireDoctor(jwt, access.prescription().getConsultationId(), true);
         verifyOwnership(access.prescription(), context.doctor().getId(), context.patient().getId());
+        if (dispensationRepository.existsByPrescriptionId(prescriptionId)) {
+            throw new ResourceConflictException("A dispensed prescription cannot be cancelled");
+        }
         OffsetDateTime now = OffsetDateTime.now(clock);
         String normalizedReason = required(reason);
         if (normalizedReason.length() < 3 || normalizedReason.length() > 1000) {
@@ -152,7 +161,7 @@ public class PrescriptionService {
         }
         access.prescription().cancel(normalizedReason, now);
         prescriptionRepository.saveAndFlush(access.prescription());
-        tokenRepository.findByPrescriptionId(prescriptionId).ifPresent(token -> {
+        lockedToken.or(() -> tokenRepository.findByPrescriptionId(prescriptionId)).ifPresent(token -> {
             token.revoke(now);
             tokenRepository.saveAndFlush(token);
         });
@@ -175,17 +184,22 @@ public class PrescriptionService {
 
     @Transactional
     public PrescriptionQrResponse generatePatientQr(Jwt jwt, UUID prescriptionId) {
-        Prescription prescription = accessService.requirePatientPrescription(jwt, prescriptionId, true).prescription();
+        var patient = accessService.requirePatient(jwt);
+        var lockedToken = tokenRepository.findByPrescriptionIdForUpdate(prescriptionId);
+        Prescription prescription = accessService.requirePatientPrescription(patient, prescriptionId, true).prescription();
         OffsetDateTime now = OffsetDateTime.now(clock);
         if (prescription.getStatus() != PrescriptionStatus.ISSUED
                 || prescription.getValidUntil() == null
                 || !now.isBefore(prescription.getValidUntil())) {
             throw new ResourceConflictException("A QR can only be generated for an active issued prescription");
         }
+        if (dispensationRepository.existsByPrescriptionId(prescriptionId)) {
+            throw new ResourceConflictException("This prescription has already been dispensed");
+        }
 
         String rawToken = uniqueTokenHash();
         String tokenHash = tokenHasher.hash(rawToken);
-        PrescriptionQrToken token = tokenRepository.findByPrescriptionId(prescriptionId)
+        PrescriptionQrToken token = lockedToken.or(() -> tokenRepository.findByPrescriptionId(prescriptionId))
                 .orElseGet(() -> new PrescriptionQrToken(prescriptionId, tokenHash, now,
                         prescription.getValidUntil()));
         token.rotate(tokenHash, now, prescription.getValidUntil());
