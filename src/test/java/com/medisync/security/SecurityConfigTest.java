@@ -204,4 +204,30 @@ class SecurityConfigTest {
                     .andExpect(jsonPath("$.error").value("FORBIDDEN"));
         }
     }
+
+    @Test
+    void prescriptionRoutesEnforcePatientDoctorAndPharmacistBoundaries() throws Exception {
+        UUID patientAuthId = UUID.randomUUID();
+        when(appUserRepository.findByAuthUserId(patientAuthId)).thenReturn(Optional.of(
+                new AppUser(patientAuthId, "patient@example.com", "Test", "Patient", null,
+                        UserRole.PATIENT, AccountStatus.ACTIVE)));
+        mockMvc.perform(get("/api/doctor/prescriptions").with(jwt().jwt(t -> t.subject(patientAuthId.toString()))))
+                .andExpect(status().isForbidden());
+
+        UUID doctorAuthId = UUID.randomUUID();
+        when(appUserRepository.findByAuthUserId(doctorAuthId)).thenReturn(Optional.of(
+                new AppUser(doctorAuthId, "doctor@example.com", "Test", "Doctor", null,
+                        UserRole.DOCTOR, AccountStatus.ACTIVE)));
+        mockMvc.perform(get("/api/patient/prescriptions").with(jwt().jwt(t -> t.subject(doctorAuthId.toString()))))
+                .andExpect(status().isForbidden());
+
+        UUID pharmacistAuthId = UUID.randomUUID();
+        when(appUserRepository.findByAuthUserId(pharmacistAuthId)).thenReturn(Optional.of(
+                new AppUser(pharmacistAuthId, "pharmacist@example.com", "Test", "Pharmacist", null,
+                        UserRole.PHARMACIST, AccountStatus.ACTIVE)));
+        mockMvc.perform(get("/api/patient/prescriptions").with(jwt().jwt(t -> t.subject(pharmacistAuthId.toString()))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/doctor/prescriptions").with(jwt().jwt(t -> t.subject(pharmacistAuthId.toString()))))
+                .andExpect(status().isForbidden());
+    }
 }

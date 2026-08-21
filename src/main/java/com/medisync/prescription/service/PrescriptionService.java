@@ -1,0 +1,209 @@
+package com.medisync.prescription.service;
+
+import com.medisync.common.dto.PageResponse;
+import com.medisync.consultation.entity.ConsultationStatus;
+import com.medisync.consultation.service.ConsultationAccessService;
+import com.medisync.exception.InvalidRequestException;
+import com.medisync.exception.ResourceConflictException;
+import com.medisync.prescription.dto.DoctorPrescriptionResponse;
+import com.medisync.prescription.dto.PatientPrescriptionDetail;
+import com.medisync.prescription.dto.PatientPrescriptionSummary;
+import com.medisync.prescription.dto.PrescriptionDraftRequest;
+import com.medisync.prescription.dto.PrescriptionItemRequest;
+import com.medisync.prescription.entity.Prescription;
+import com.medisync.prescription.entity.PrescriptionItem;
+import com.medisync.prescription.entity.PrescriptionQrToken;
+import com.medisync.prescription.entity.PrescriptionStatus;
+import com.medisync.prescription.repository.PrescriptionItemRepository;
+import com.medisync.prescription.repository.PrescriptionQrTokenRepository;
+import com.medisync.prescription.repository.PrescriptionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class PrescriptionService {
+
+    private static final Logger log = LoggerFactory.getLogger(PrescriptionService.class);
+    private static final int MAX_PAGE_SIZE = 50;
+
+    private final PrescriptionRepository prescriptionRepository;
+    private final PrescriptionItemRepository itemRepository;
+    private final PrescriptionQrTokenRepository tokenRepository;
+    private final PrescriptionAccessService accessService;
+    private final ConsultationAccessService consultationAccessService;
+    private final PrescriptionResponseMapper mapper;
+    private final PrescriptionQrTokenGenerator tokenGenerator;
+    private final Clock clock;
+
+    public PrescriptionService(PrescriptionRepository prescriptionRepository,
+                               PrescriptionItemRepository itemRepository,
+                               PrescriptionQrTokenRepository tokenRepository,
+                               PrescriptionAccessService accessService,
+                               ConsultationAccessService consultationAccessService,
+                               PrescriptionResponseMapper mapper,
+                               PrescriptionQrTokenGenerator tokenGenerator,
+                               Clock clock) {
+        this.prescriptionRepository = prescriptionRepository;
+        this.itemRepository = itemRepository;
+        this.tokenRepository = tokenRepository;
+        this.accessService = accessService;
+        this.consultationAccessService = consultationAccessService;
+        this.mapper = mapper;
+        this.tokenGenerator = tokenGenerator;
+        this.clock = clock;
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<DoctorPrescriptionResponse> doctorList(Jwt jwt, int page, int size) {
+        var doctor = accessService.requireDoctor(jwt);
+        return PageResponse.from(prescriptionRepository.findByDoctorId(doctor.getId(), page(page, size)),
+                mapper::toDoctorResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public DoctorPrescriptionResponse doctorDetails(Jwt jwt, UUID prescriptionId) {
+        return mapper.toDoctorResponse(accessService.requireDoctorPrescription(jwt, prescriptionId, false)
+                .prescription());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DoctorPrescriptionResponse> consultationList(Jwt jwt, UUID consultationId) {
+        consultationAccessService.requireDoctor(jwt, consultationId, false);
+        return prescriptionRepository.findByConsultationIdOrderByCreatedAtDesc(consultationId).stream()
+                .map(mapper::toDoctorResponse).toList();
+    }
+
+    @Transactional
+    public DoctorPrescriptionResponse createDraft(Jwt jwt, UUID consultationId) {
+        var context = consultationAccessService.requireDoctor(jwt, consultationId, true);
+        requireNotCancelled(context.consultation().getStatus());
+        Prescription prescription = prescriptionRepository
+                .findByConsultationIdAndStatus(consultationId, PrescriptionStatus.DRAFT)
+                .orElseGet(() -> prescriptionRepository.saveAndFlush(new Prescription(consultationId,
+                        context.doctor().getId(), context.patient().getId())));
+        verifyOwnership(prescription, context.doctor().getId(), context.patient().getId());
+        return mapper.toDoctorResponse(prescription);
+    }
+
+    @Transactional
+    public DoctorPrescriptionResponse updateDraft(Jwt jwt, UUID prescriptionId, PrescriptionDraftRequest request) {
+        var access = accessService.requireDoctorPrescription(jwt, prescriptionId, true);
+        var context = consultationAccessService.requireDoctor(jwt, access.prescription().getConsultationId(), true);
+        requireNotCancelled(context.consultation().getStatus());
+        verifyOwnership(access.prescription(), context.doctor().getId(), context.patient().getId());
+        access.prescription().updateDraft(request.validityDays(), optional(request.generalInstructions()));
+        prescriptionRepository.saveAndFlush(access.prescription());
+        itemRepository.deleteByPrescriptionId(prescriptionId);
+        itemRepository.flush();
+        List<PrescriptionItem> items = java.util.stream.IntStream.range(0, request.items().size())
+                .mapToObj(index -> item(prescriptionId, index + 1, request.items().get(index)))
+                .toList();
+        itemRepository.saveAllAndFlush(items);
+        return mapper.toDoctorResponse(access.prescription());
+    }
+
+    @Transactional
+    public DoctorPrescriptionResponse issue(Jwt jwt, UUID prescriptionId) {
+        var access = accessService.requireDoctorPrescription(jwt, prescriptionId, true);
+        var context = consultationAccessService.requireDoctor(jwt, access.prescription().getConsultationId(), true);
+        verifyOwnership(access.prescription(), context.doctor().getId(), context.patient().getId());
+        ConsultationStatus status = context.consultation().getStatus();
+        if (status != ConsultationStatus.IN_PROGRESS && status != ConsultationStatus.COMPLETED) {
+            throw new ResourceConflictException("A prescription can only be issued during or after a consultation");
+        }
+        long count = itemRepository.countByPrescriptionId(prescriptionId);
+        if (count < 1 || count > 20) {
+            throw new InvalidRequestException("An issued prescription must contain between 1 and 20 medicines");
+        }
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        access.prescription().issue(now);
+        prescriptionRepository.saveAndFlush(access.prescription());
+        tokenRepository.saveAndFlush(new PrescriptionQrToken(prescriptionId,
+                tokenGenerator.generateUniqueToken(), now, access.prescription().getValidUntil()));
+        log.info("Prescription {} issued", prescriptionId);
+        return mapper.toDoctorResponse(access.prescription());
+    }
+
+    @Transactional
+    public DoctorPrescriptionResponse cancel(Jwt jwt, UUID prescriptionId, String reason) {
+        var access = accessService.requireDoctorPrescription(jwt, prescriptionId, true);
+        var context = consultationAccessService.requireDoctor(jwt, access.prescription().getConsultationId(), true);
+        verifyOwnership(access.prescription(), context.doctor().getId(), context.patient().getId());
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        String normalizedReason = required(reason);
+        if (normalizedReason.length() < 3 || normalizedReason.length() > 1000) {
+            throw new InvalidRequestException("Cancellation reason must be between 3 and 1000 characters");
+        }
+        access.prescription().cancel(normalizedReason, now);
+        prescriptionRepository.saveAndFlush(access.prescription());
+        PrescriptionQrToken token = tokenRepository.findByPrescriptionId(prescriptionId)
+                .orElseThrow(() -> new ResourceConflictException("The issued prescription QR token is missing"));
+        token.revoke(now);
+        tokenRepository.saveAndFlush(token);
+        log.info("Prescription {} cancelled", prescriptionId);
+        return mapper.toDoctorResponse(access.prescription());
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PatientPrescriptionSummary> patientList(Jwt jwt, int page, int size) {
+        var patient = accessService.requirePatient(jwt);
+        return PageResponse.from(prescriptionRepository.findByPatientIdAndStatusIn(patient.getId(),
+                        EnumSet.of(PrescriptionStatus.ISSUED, PrescriptionStatus.CANCELLED), page(page, size)),
+                mapper::toPatientSummary);
+    }
+
+    @Transactional(readOnly = true)
+    public PatientPrescriptionDetail patientDetails(Jwt jwt, UUID prescriptionId) {
+        return mapper.toPatientDetail(accessService.requirePatientPrescription(jwt, prescriptionId).prescription());
+    }
+
+    private PageRequest page(int page, int size) {
+        if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+            throw new InvalidRequestException("Page must be non-negative and size must be between 1 and 50");
+        }
+        return PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+    }
+
+    private PrescriptionItem item(UUID prescriptionId, int position, PrescriptionItemRequest request) {
+        return new PrescriptionItem(prescriptionId, position, required(request.medicineName()),
+                optional(request.strength()), required(request.dosage()), required(request.frequency()),
+                required(request.duration()), optional(request.quantity()), optional(request.medicineForm()),
+                optional(request.route()), optional(request.instructions()));
+    }
+
+    private void requireNotCancelled(ConsultationStatus status) {
+        if (status == ConsultationStatus.CANCELLED) {
+            throw new ResourceConflictException("Prescriptions cannot be created or edited for a cancelled consultation");
+        }
+    }
+
+    private void verifyOwnership(Prescription prescription, UUID doctorId, UUID patientId) {
+        if (!doctorId.equals(prescription.getDoctorId()) || !patientId.equals(prescription.getPatientId())) {
+            throw new ResourceConflictException("Prescription and consultation ownership are inconsistent");
+        }
+    }
+
+    private String required(String value) {
+        String normalized = optional(value);
+        if (normalized == null) {
+            throw new InvalidRequestException("Required prescription text cannot be blank");
+        }
+        return normalized;
+    }
+
+    private String optional(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim();
+    }
+}

@@ -1,0 +1,158 @@
+package com.medisync.prescription.service;
+
+import com.medisync.appointment.entity.Appointment;
+import com.medisync.appointment.repository.AppointmentRepository;
+import com.medisync.consultation.entity.ConsultationSession;
+import com.medisync.consultation.repository.ConsultationSessionRepository;
+import com.medisync.department.entity.Department;
+import com.medisync.department.repository.DepartmentRepository;
+import com.medisync.exception.ResourceNotFoundException;
+import com.medisync.hospital.entity.Hospital;
+import com.medisync.hospital.repository.HospitalRepository;
+import com.medisync.prescription.dto.DoctorPrescriptionResponse;
+import com.medisync.prescription.dto.PatientPrescriptionDetail;
+import com.medisync.prescription.dto.PatientPrescriptionSummary;
+import com.medisync.prescription.dto.PrescriptionItemResponse;
+import com.medisync.prescription.entity.Prescription;
+import com.medisync.prescription.entity.PrescriptionItem;
+import com.medisync.prescription.entity.PrescriptionQrToken;
+import com.medisync.prescription.entity.PrescriptionStatus;
+import com.medisync.prescription.repository.PrescriptionItemRepository;
+import com.medisync.prescription.repository.PrescriptionQrTokenRepository;
+import com.medisync.specialization.entity.Specialization;
+import com.medisync.specialization.repository.SpecializationRepository;
+import com.medisync.user.entity.AppUser;
+import com.medisync.user.entity.DoctorProfile;
+import com.medisync.user.entity.PatientProfile;
+import com.medisync.user.repository.AppUserRepository;
+import com.medisync.user.repository.DoctorProfileRepository;
+import com.medisync.user.repository.PatientProfileRepository;
+import org.springframework.stereotype.Component;
+
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.util.List;
+
+@Component
+public class PrescriptionResponseMapper {
+
+    private final PrescriptionItemRepository itemRepository;
+    private final PrescriptionQrTokenRepository tokenRepository;
+    private final ConsultationSessionRepository consultationRepository;
+    private final AppointmentRepository appointmentRepository;
+    private final DoctorProfileRepository doctorProfileRepository;
+    private final PatientProfileRepository patientProfileRepository;
+    private final AppUserRepository appUserRepository;
+    private final HospitalRepository hospitalRepository;
+    private final DepartmentRepository departmentRepository;
+    private final SpecializationRepository specializationRepository;
+    private final PrescriptionQrTokenGenerator tokenGenerator;
+    private final Clock clock;
+
+    public PrescriptionResponseMapper(PrescriptionItemRepository itemRepository,
+                                      PrescriptionQrTokenRepository tokenRepository,
+                                      ConsultationSessionRepository consultationRepository,
+                                      AppointmentRepository appointmentRepository,
+                                      DoctorProfileRepository doctorProfileRepository,
+                                      PatientProfileRepository patientProfileRepository,
+                                      AppUserRepository appUserRepository,
+                                      HospitalRepository hospitalRepository,
+                                      DepartmentRepository departmentRepository,
+                                      SpecializationRepository specializationRepository,
+                                      PrescriptionQrTokenGenerator tokenGenerator,
+                                      Clock clock) {
+        this.itemRepository = itemRepository;
+        this.tokenRepository = tokenRepository;
+        this.consultationRepository = consultationRepository;
+        this.appointmentRepository = appointmentRepository;
+        this.doctorProfileRepository = doctorProfileRepository;
+        this.patientProfileRepository = patientProfileRepository;
+        this.appUserRepository = appUserRepository;
+        this.hospitalRepository = hospitalRepository;
+        this.departmentRepository = departmentRepository;
+        this.specializationRepository = specializationRepository;
+        this.tokenGenerator = tokenGenerator;
+        this.clock = clock;
+    }
+
+    public DoctorPrescriptionResponse toDoctorResponse(Prescription prescription) {
+        RelatedData data = relatedData(prescription);
+        List<PrescriptionItemResponse> items = items(prescription);
+        return new DoctorPrescriptionResponse(prescription.getId(), prescription.getConsultationId(),
+                prescription.getStatus(), fullName(data.patientUser()), "Dr. " + fullName(data.doctorUser()),
+                data.doctor().getMedicalRegistrationNumber(), data.hospital().getName(), data.department().getName(),
+                data.specialization().getName(), data.appointment().getScheduledStart(), prescription.getValidityDays(),
+                prescription.getGeneralInstructions(), items, prescription.getIssuedAt(), prescription.getValidUntil(),
+                expired(prescription), prescription.getCancelledAt(), prescription.getCancellationReason(),
+                prescription.getCreatedAt(), prescription.getUpdatedAt());
+    }
+
+    public PatientPrescriptionSummary toPatientSummary(Prescription prescription) {
+        RelatedData data = relatedData(prescription);
+        return new PatientPrescriptionSummary(prescription.getId(), prescription.getConsultationId(),
+                "Dr. " + fullName(data.doctorUser()), data.specialization().getName(), data.hospital().getName(),
+                prescription.getIssuedAt(), prescription.getValidUntil(), prescription.getStatus(),
+                expired(prescription), itemRepository.countByPrescriptionId(prescription.getId()));
+    }
+
+    public PatientPrescriptionDetail toPatientDetail(Prescription prescription) {
+        RelatedData data = relatedData(prescription);
+        PrescriptionQrToken token = tokenRepository.findByPrescriptionId(prescription.getId()).orElse(null);
+        boolean expired = expired(prescription);
+        boolean usable = prescription.getStatus() == PrescriptionStatus.ISSUED && !expired && token != null
+                && token.getRevokedAt() == null
+                && OffsetDateTime.now(clock).isBefore(token.getExpiresAt());
+        return new PatientPrescriptionDetail(prescription.getId(), prescription.getConsultationId(),
+                fullName(data.patientUser()), "Dr. " + fullName(data.doctorUser()),
+                data.doctor().getMedicalRegistrationNumber(), data.hospital().getName(), data.department().getName(),
+                data.specialization().getName(), data.appointment().getScheduledStart(), prescription.getIssuedAt(),
+                prescription.getValidUntil(), prescription.getStatus(), expired, prescription.getGeneralInstructions(),
+                items(prescription), prescription.getCancellationReason(), prescription.getCancelledAt(),
+                usable ? tokenGenerator.payload(token.getToken()) : null, usable);
+    }
+
+    private List<PrescriptionItemResponse> items(Prescription prescription) {
+        return itemRepository.findByPrescriptionIdOrderByPositionAsc(prescription.getId()).stream()
+                .map(PrescriptionItemResponse::from)
+                .toList();
+    }
+
+    private boolean expired(Prescription prescription) {
+        return prescription.getValidUntil() != null && !OffsetDateTime.now(clock).isBefore(prescription.getValidUntil());
+    }
+
+    private RelatedData relatedData(Prescription prescription) {
+        ConsultationSession consultation = consultationRepository.findById(prescription.getConsultationId())
+                .orElseThrow(() -> new ResourceNotFoundException("Consultation not found"));
+        Appointment appointment = appointmentRepository.findById(consultation.getAppointmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+        DoctorProfile doctor = doctorProfileRepository.findById(prescription.getDoctorId())
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor profile not found"));
+        PatientProfile patient = patientProfileRepository.findById(prescription.getPatientId())
+                .orElseThrow(() -> new ResourceNotFoundException("Patient profile not found"));
+        AppUser doctorUser = appUserRepository.findById(doctor.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor account not found"));
+        AppUser patientUser = appUserRepository.findById(patient.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Patient account not found"));
+        Hospital hospital = hospitalRepository.findById(doctor.getHospitalId())
+                .orElseThrow(() -> new ResourceNotFoundException("Hospital not found"));
+        Department department = departmentRepository.findById(doctor.getDepartmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Department not found"));
+        Specialization specialization = specializationRepository.findById(doctor.getSpecializationId())
+                .orElseThrow(() -> new ResourceNotFoundException("Specialization not found"));
+        if (!appointment.getDoctorId().equals(doctor.getId()) || !appointment.getPatientId().equals(patient.getId())) {
+            throw new com.medisync.exception.ResourceConflictException(
+                    "Prescription and consultation ownership are inconsistent");
+        }
+        return new RelatedData(appointment, doctor, patient, doctorUser, patientUser, hospital, department,
+                specialization);
+    }
+
+    private String fullName(AppUser user) {
+        return user.getFirstName() + " " + user.getLastName();
+    }
+
+    private record RelatedData(Appointment appointment, DoctorProfile doctor, PatientProfile patient,
+                               AppUser doctorUser, AppUser patientUser, Hospital hospital, Department department,
+                               Specialization specialization) {}
+}
