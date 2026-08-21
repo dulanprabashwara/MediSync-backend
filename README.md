@@ -1,6 +1,6 @@
 # MediSync API
 
-Spring Boot API for MediSync through Phase 3. MediSync is an online patient-care platform designed to connect patients with verified doctors for scheduled online consultations and reduce unnecessary hospital visits. The API owns application users, role authorization, professional verification, date-based doctor availability, doctor discovery, consultation booking, consultation lifecycle, persistent chat, and private clinical notes while Supabase Auth owns credentials and sessions.
+Spring Boot API for MediSync through Phase 4. MediSync is an online patient-care platform designed to connect patients with verified doctors for scheduled online consultations and reduce unnecessary hospital visits. The API owns application users, role authorization, professional verification, date-based doctor availability, doctor discovery, consultation booking, consultation lifecycle, persistent chat, private clinical notes, and digital prescriptions while Supabase Auth owns credentials and sessions.
 
 Backend tables, Java types, enums, and API routes retain the established `appointment` terminology. In Phase 2 these records represent scheduled online consultations, not physical hospital visits.
 
@@ -97,6 +97,19 @@ The STOMP `CONNECT` frame carries the existing Supabase access token in its nati
 
 Clinical notes use a separate doctor-only endpoint and response model. They are never included in patient consultation, message, or WebSocket payloads. The assigned doctor may edit the note while the session is scheduled or in progress; it becomes read-only after completion (and remains read-only for a cancelled session).
 
+## Phase 4 digital prescription API
+
+| Endpoint | Access | Purpose |
+| --- | --- | --- |
+| `GET /api/doctor/prescriptions[/{id}]` | Assigned ACTIVE VERIFIED doctor | Paginated history or prescription details |
+| `GET/POST /api/doctor/consultations/{id}/prescriptions` | Assigned ACTIVE VERIFIED doctor | Consultation history or create/return its single draft |
+| `PUT /api/doctor/prescriptions/{id}` | Assigned doctor, DRAFT only | Save validity, instructions, and 0–20 structured medicines |
+| `POST /api/doctor/prescriptions/{id}/issue` | Assigned doctor, DRAFT only | Issue during an in-progress or completed consultation |
+| `POST /api/doctor/prescriptions/{id}/cancel` | Assigned doctor, ISSUED only | Cancel with a reason and revoke the QR token |
+| `GET /api/patient/prescriptions[/{id}]` | Owning ACTIVE patient | Read issued/cancelled prescriptions; detail includes an active QR only |
+
+Issued prescriptions are immutable. Validity and expiry are derived on the server. QR payloads have the form `MEDISYNC:RX:<opaque-token>` and contain no identity or clinical data. Tokens use 256 bits from `SecureRandom`, are stored separately, and are hidden from list responses. Phase 4 has no public or pharmacist verification endpoint.
+
 ## Database migrations
 
 Flyway runs migrations on application startup before Hibernate validates the schema. Hibernate uses `ddl-auto=validate`; it never creates or updates production tables. The migrations are incremental:
@@ -105,6 +118,7 @@ Flyway runs migrations on application startup before Hibernate validates the sch
 - `V3__phase_2a_doctor_verification_foundation.sql`: Phase 2A professional reference data and doctor verification
 - `V4__phase_2b_availability_and_appointments.sql`: Phase 2B availability and online consultation booking
 - `V5__phase_3_online_consultations_and_chat.sql`: Phase 3 consultation sessions, persistent chat, and doctor-only clinical notes
+- `V6__phase_4_digital_prescriptions_and_qr.sql`: Phase 4 prescription lifecycle, ordered items, and opaque QR tokens
 
 V5 additively creates `consultation_sessions`, `consultation_messages`, and `consultation_clinical_notes`, including lifecycle, ownership, content, and uniqueness constraints. It safely creates one `SCHEDULED` session for each existing `CONFIRMED` appointment that does not already have one, without changing the appointment. The first administrator is created only through the documented trusted bootstrap process in `docs/admin-bootstrap.md`.
 
@@ -115,8 +129,8 @@ Do not run destructive Flyway repair/clean operations against the hosted project
 - Phase 1: authentication, roles, and security (complete)
 - Phase 2A: reference data, professional profiles, and administrator verification (complete)
 - Phase 2B: availability, doctor discovery, online consultation booking, symptom submission, and booking transitions (complete)
-- Phase 3: online consultation session, secure doctor-patient chat, private clinical notes, and consultation status (current)
-- Phase 4: digital prescriptions, patient prescription view, and QR support (future)
+- Phase 3: online consultation session, secure doctor-patient chat, private clinical notes, and consultation status (complete)
+- Phase 4: digital prescriptions, patient prescription view, and QR support (current)
 - Phase 5: pharmacist scanning, prescription verification, and dispensing (future)
 
 Remote monitoring and formal follow-up scheduling are outside the core roadmap.
