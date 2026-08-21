@@ -81,15 +81,19 @@ class ConsultationChatServiceTest {
     void completedConsultationStillAllowsMessages() {
         context.consultation().start();
         context.consultation().complete();
+        when(accessService.requirePatient(jwt, context.consultation().getId(), true)).thenReturn(context);
         when(accessService.requireDoctor(jwt, context.consultation().getId(), true)).thenReturn(context);
         when(messageRepository.save(any(ConsultationMessage.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        var response = service.sendDoctorMessage(jwt, context.consultation().getId(),
+        var patientResponse = service.sendPatientMessage(jwt, context.consultation().getId(),
+                new SendMessageRequest("Thank you doctor"));
+        var doctorResponse = service.sendDoctorMessage(jwt, context.consultation().getId(),
                 new SendMessageRequest("Continue hydration"));
 
-        assertThat(response.senderType()).isEqualTo(ConsultationSenderType.DOCTOR);
-        verify(accessService).requireChatWritable(context);
+        assertThat(patientResponse.senderType()).isEqualTo(ConsultationSenderType.PATIENT);
+        assertThat(doctorResponse.senderType()).isEqualTo(ConsultationSenderType.DOCTOR);
+        verify(accessService, org.mockito.Mockito.times(2)).requireChatWritable(context);
     }
 
     @Test

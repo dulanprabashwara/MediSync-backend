@@ -24,6 +24,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.OffsetDateTime;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -51,7 +53,7 @@ class DoctorAvailabilityServiceTest {
     @BeforeEach
     void setUp() {
         service = new DoctorAvailabilityService(currentUserService, doctorProfileRepository, windowRepository,
-                slotRepository);
+                slotRepository, Clock.systemUTC());
         UUID authId = UUID.randomUUID();
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(authId.toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
@@ -113,6 +115,43 @@ class DoctorAvailabilityServiceTest {
         assertThatThrownBy(() -> service.create(jwt,
                 new CreateAvailabilityRequest(start.minusDays(2), start.minusDays(1), 30, "Asia/Colombo")))
                 .isInstanceOf(InvalidRequestException.class).hasMessageContaining("future");
+    }
+
+    @Test
+    void startExactlyAtServerNowIsRejected() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-08-21T08:00:00Z");
+        service = new DoctorAvailabilityService(currentUserService, doctorProfileRepository, windowRepository,
+                slotRepository, Clock.fixed(now.toInstant(), ZoneId.of("UTC")));
+
+        assertThatThrownBy(() -> service.create(jwt,
+                new CreateAvailabilityRequest(now, now.plusHours(1), 30, "Asia/Colombo")))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("future");
+    }
+
+    @Test
+    void doctorListQueriesOnlyUnexpiredWindowsAndFiltersElapsedSlots() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-08-21T08:00:00Z");
+        service = new DoctorAvailabilityService(currentUserService, doctorProfileRepository, windowRepository,
+                slotRepository, Clock.fixed(now.toInstant(), ZoneId.of("UTC")));
+        when(currentUserService.requireRole(jwt, UserRole.DOCTOR, AccountStatus.ACTIVE)).thenReturn(activeDoctorUser);
+        when(doctorProfileRepository.findByUserId(activeDoctorUser.getId())).thenReturn(Optional.of(verifiedDoctor));
+        DoctorAvailabilityWindow partial = new DoctorAvailabilityWindow(verifiedDoctor.getId(),
+                now.minusHours(1), now.plusHours(1), 30, "Asia/Colombo");
+        AppointmentSlot elapsed = new AppointmentSlot(partial.getId(), verifiedDoctor.getId(),
+                now.minusMinutes(30), now);
+        AppointmentSlot futureSlot = new AppointmentSlot(partial.getId(), verifiedDoctor.getId(),
+                now.plusMinutes(30), now.plusHours(1));
+        when(windowRepository.findByDoctorIdAndEndsAtAfterOrderByStartsAtAsc(verifiedDoctor.getId(), now))
+                .thenReturn(List.of(partial));
+        when(slotRepository.findByAvailabilityWindowIdOrderByStartsAtAsc(partial.getId()))
+                .thenReturn(List.of(elapsed, futureSlot));
+
+        var result = service.list(jwt);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).slots()).extracting(slot -> slot.id()).containsExactly(futureSlot.getId());
+        verify(windowRepository).findByDoctorIdAndEndsAtAfterOrderByStartsAtAsc(verifiedDoctor.getId(), now);
     }
 
     @Test

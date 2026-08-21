@@ -102,13 +102,19 @@ Clinical notes use a separate doctor-only endpoint and response model. They are 
 | Endpoint | Access | Purpose |
 | --- | --- | --- |
 | `GET /api/doctor/prescriptions[/{id}]` | Assigned ACTIVE VERIFIED doctor | Paginated history or prescription details |
-| `GET/POST /api/doctor/consultations/{id}/prescriptions` | Assigned ACTIVE VERIFIED doctor | Consultation history or create/return its single draft |
-| `PUT /api/doctor/prescriptions/{id}` | Assigned doctor, DRAFT only | Save validity, instructions, and 0–20 structured medicines |
-| `POST /api/doctor/prescriptions/{id}/issue` | Assigned doctor, DRAFT only | Issue during an in-progress or completed consultation |
+| `GET/POST /api/doctor/consultations/{id}/prescriptions` | Assigned ACTIVE VERIFIED doctor | Consultation history or create/return its single draft while scheduled/in progress |
+| `PUT /api/doctor/prescriptions/{id}` | Assigned doctor, writable DRAFT only | Save validity, instructions, and 0–20 structured medicines while scheduled/in progress |
+| `DELETE /api/doctor/prescriptions/{id}` | Assigned doctor, DRAFT only | Discard a draft and its items, including a legacy completed-consultation draft |
+| `POST /api/doctor/prescriptions/{id}/issue` | Assigned doctor, DRAFT only | Issue only while the consultation is `IN_PROGRESS` |
 | `POST /api/doctor/prescriptions/{id}/cancel` | Assigned doctor, ISSUED only | Cancel with a reason and revoke the QR token |
-| `GET /api/patient/prescriptions[/{id}]` | Owning ACTIVE patient | Read issued/cancelled prescriptions; detail includes an active QR only |
+| `GET /api/patient/prescriptions[/{id}]` | Owning ACTIVE patient | Read issued/cancelled prescriptions without returning a QR secret |
+| `POST /api/patient/prescriptions/{id}/qr` | Owning ACTIVE patient | Generate/rotate an eligible issued prescription QR on demand |
 
-Issued prescriptions are immutable. Validity and expiry are derived on the server. QR payloads have the form `MEDISYNC:RX:<opaque-token>` and contain no identity or clinical data. Tokens use 256 bits from `SecureRandom`, are stored separately, and are hidden from list responses. Phase 4 has no public or pharmacist verification endpoint.
+Issued prescriptions are immutable. A consultation cannot be completed while it has an unresolved draft. Prescribing stops after completion, while consultation chat deliberately remains writable. Cancelled prescription responses retain cancellation metadata but omit medicine items and general instructions.
+
+QR payloads have the form `MEDISYNC:RX:<opaque-token>` and contain no identity or clinical data. The patient generates them on demand from a 256-bit `SecureRandom` token. PostgreSQL stores only the lowercase SHA-256 hash; the raw token is returned once and is neither persisted nor reconstructed by detail endpoints. Regeneration replaces the current hash and invalidates the previous QR. Phase 4 has no public or pharmacist verification endpoint.
+
+Availability creation and normal availability APIs use the injectable server `Clock`: a window must start strictly in the future, fully expired windows and elapsed doctor slots are filtered without deleting history, patient slots must also satisfy the configured lead time, and booking rechecks that rule while holding the slot lock.
 
 ## Database migrations
 
@@ -119,6 +125,7 @@ Flyway runs migrations on application startup before Hibernate validates the sch
 - `V4__phase_2b_availability_and_appointments.sql`: Phase 2B availability and online consultation booking
 - `V5__phase_3_online_consultations_and_chat.sql`: Phase 3 consultation sessions, persistent chat, and doctor-only clinical notes
 - `V6__phase_4_digital_prescriptions_and_qr.sql`: Phase 4 prescription lifecycle, ordered items, and opaque QR tokens
+- `V7__phase_4_security_and_availability_hardening.sql`: revokes legacy QR credentials, removes raw-token storage, and adds unique SHA-256 hash storage
 
 V5 additively creates `consultation_sessions`, `consultation_messages`, and `consultation_clinical_notes`, including lifecycle, ownership, content, and uniqueness constraints. It safely creates one `SCHEDULED` session for each existing `CONFIRMED` appointment that does not already have one, without changing the appointment. The first administrator is created only through the documented trusted bootstrap process in `docs/admin-bootstrap.md`.
 
@@ -131,7 +138,7 @@ Do not run destructive Flyway repair/clean operations against the hosted project
 - Phase 2B: availability, doctor discovery, online consultation booking, symptom submission, and booking transitions (complete)
 - Phase 3: online consultation session, secure doctor-patient chat, private clinical notes, and consultation status (complete)
 - Phase 4: digital prescriptions, patient prescription view, and QR support (current)
-- Phase 5: pharmacist scanning, prescription verification, and dispensing (future)
+- Phase 5: Pharmacist QR Scanning, Prescription Verification, Medicine Dispensing, and Dispensing History (future)
 
 Remote monitoring and formal follow-up scheduling are outside the core roadmap.
 

@@ -1,6 +1,7 @@
 package com.medisync.doctor.service;
 
 import com.medisync.availability.repository.AppointmentSlotRepository;
+import com.medisync.config.AppointmentProperties;
 import com.medisync.department.entity.Department;
 import com.medisync.department.repository.DepartmentRepository;
 import com.medisync.doctor.dto.DoctorSummaryResponse;
@@ -27,6 +28,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.util.Arrays;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -59,7 +64,8 @@ class PatientDoctorDiscoveryServiceTest {
     @BeforeEach
     void setUp() {
         service = new PatientDoctorDiscoveryService(currentUserService, doctorProfileRepository, appUserRepository,
-                hospitalRepository, departmentRepository, specializationRepository, slotRepository);
+                hospitalRepository, departmentRepository, specializationRepository, slotRepository,
+                new AppointmentProperties(0), Clock.systemUTC());
         UUID authId = UUID.randomUUID();
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(authId.toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
@@ -155,6 +161,27 @@ class PatientDoctorDiscoveryServiceTest {
 
         assertThatThrownBy(() -> service.details(jwt, inactiveReferenceDoctor.getId()))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void patientSlotQueryUsesStrictServerLeadTimeBoundary() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-08-21T08:00:00Z");
+        service = new PatientDoctorDiscoveryService(currentUserService, doctorProfileRepository, appUserRepository,
+                hospitalRepository, departmentRepository, specializationRepository, slotRepository,
+                new AppointmentProperties(15), Clock.fixed(now.toInstant(), ZoneId.of("UTC")));
+        allowPatient();
+        when(doctorProfileRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        allowMapping();
+        OffsetDateTime earliest = now.plusMinutes(15);
+        OffsetDateTime rangeEnd = LocalDate.of(2026, 8, 22).plusDays(1)
+                .atStartOfDay(ZoneId.of("Asia/Colombo")).toOffsetDateTime();
+        when(slotRepository.findVisibleAvailableSlots(doctor.getId(), earliest, rangeEnd))
+                .thenReturn(java.util.List.of());
+
+        service.availableSlots(jwt, doctor.getId(), LocalDate.of(2026, 8, 21),
+                LocalDate.of(2026, 8, 22));
+
+        verify(slotRepository).findVisibleAvailableSlots(doctor.getId(), earliest, rangeEnd);
     }
 
     private void allowPatient() {

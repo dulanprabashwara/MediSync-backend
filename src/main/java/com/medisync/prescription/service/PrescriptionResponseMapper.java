@@ -15,10 +15,8 @@ import com.medisync.prescription.dto.PatientPrescriptionSummary;
 import com.medisync.prescription.dto.PrescriptionItemResponse;
 import com.medisync.prescription.entity.Prescription;
 import com.medisync.prescription.entity.PrescriptionItem;
-import com.medisync.prescription.entity.PrescriptionQrToken;
 import com.medisync.prescription.entity.PrescriptionStatus;
 import com.medisync.prescription.repository.PrescriptionItemRepository;
-import com.medisync.prescription.repository.PrescriptionQrTokenRepository;
 import com.medisync.specialization.entity.Specialization;
 import com.medisync.specialization.repository.SpecializationRepository;
 import com.medisync.user.entity.AppUser;
@@ -37,7 +35,6 @@ import java.util.List;
 public class PrescriptionResponseMapper {
 
     private final PrescriptionItemRepository itemRepository;
-    private final PrescriptionQrTokenRepository tokenRepository;
     private final ConsultationSessionRepository consultationRepository;
     private final AppointmentRepository appointmentRepository;
     private final DoctorProfileRepository doctorProfileRepository;
@@ -46,11 +43,9 @@ public class PrescriptionResponseMapper {
     private final HospitalRepository hospitalRepository;
     private final DepartmentRepository departmentRepository;
     private final SpecializationRepository specializationRepository;
-    private final PrescriptionQrTokenGenerator tokenGenerator;
     private final Clock clock;
 
     public PrescriptionResponseMapper(PrescriptionItemRepository itemRepository,
-                                      PrescriptionQrTokenRepository tokenRepository,
                                       ConsultationSessionRepository consultationRepository,
                                       AppointmentRepository appointmentRepository,
                                       DoctorProfileRepository doctorProfileRepository,
@@ -59,10 +54,8 @@ public class PrescriptionResponseMapper {
                                       HospitalRepository hospitalRepository,
                                       DepartmentRepository departmentRepository,
                                       SpecializationRepository specializationRepository,
-                                      PrescriptionQrTokenGenerator tokenGenerator,
                                       Clock clock) {
         this.itemRepository = itemRepository;
-        this.tokenRepository = tokenRepository;
         this.consultationRepository = consultationRepository;
         this.appointmentRepository = appointmentRepository;
         this.doctorProfileRepository = doctorProfileRepository;
@@ -71,18 +64,18 @@ public class PrescriptionResponseMapper {
         this.hospitalRepository = hospitalRepository;
         this.departmentRepository = departmentRepository;
         this.specializationRepository = specializationRepository;
-        this.tokenGenerator = tokenGenerator;
         this.clock = clock;
     }
 
     public DoctorPrescriptionResponse toDoctorResponse(Prescription prescription) {
         RelatedData data = relatedData(prescription);
-        List<PrescriptionItemResponse> items = items(prescription);
+        List<PrescriptionItemResponse> items = visibleItems(prescription);
         return new DoctorPrescriptionResponse(prescription.getId(), prescription.getConsultationId(),
-                prescription.getStatus(), fullName(data.patientUser()), "Dr. " + fullName(data.doctorUser()),
+                data.consultation().getStatus(), prescription.getStatus(), fullName(data.patientUser()),
+                "Dr. " + fullName(data.doctorUser()),
                 data.doctor().getMedicalRegistrationNumber(), data.hospital().getName(), data.department().getName(),
                 data.specialization().getName(), data.appointment().getScheduledStart(), prescription.getValidityDays(),
-                prescription.getGeneralInstructions(), items, prescription.getIssuedAt(), prescription.getValidUntil(),
+                visibleGeneralInstructions(prescription), items, prescription.getIssuedAt(), prescription.getValidUntil(),
                 expired(prescription), prescription.getCancelledAt(), prescription.getCancellationReason(),
                 prescription.getCreatedAt(), prescription.getUpdatedAt());
     }
@@ -92,23 +85,30 @@ public class PrescriptionResponseMapper {
         return new PatientPrescriptionSummary(prescription.getId(), prescription.getConsultationId(),
                 "Dr. " + fullName(data.doctorUser()), data.specialization().getName(), data.hospital().getName(),
                 prescription.getIssuedAt(), prescription.getValidUntil(), prescription.getStatus(),
-                expired(prescription), itemRepository.countByPrescriptionId(prescription.getId()));
+                expired(prescription), prescription.getStatus() == PrescriptionStatus.CANCELLED
+                        ? 0 : itemRepository.countByPrescriptionId(prescription.getId()));
     }
 
     public PatientPrescriptionDetail toPatientDetail(Prescription prescription) {
         RelatedData data = relatedData(prescription);
-        PrescriptionQrToken token = tokenRepository.findByPrescriptionId(prescription.getId()).orElse(null);
         boolean expired = expired(prescription);
-        boolean usable = prescription.getStatus() == PrescriptionStatus.ISSUED && !expired && token != null
-                && token.getRevokedAt() == null
-                && OffsetDateTime.now(clock).isBefore(token.getExpiresAt());
+        boolean generationAllowed = prescription.getStatus() == PrescriptionStatus.ISSUED && !expired;
         return new PatientPrescriptionDetail(prescription.getId(), prescription.getConsultationId(),
                 fullName(data.patientUser()), "Dr. " + fullName(data.doctorUser()),
                 data.doctor().getMedicalRegistrationNumber(), data.hospital().getName(), data.department().getName(),
                 data.specialization().getName(), data.appointment().getScheduledStart(), prescription.getIssuedAt(),
-                prescription.getValidUntil(), prescription.getStatus(), expired, prescription.getGeneralInstructions(),
-                items(prescription), prescription.getCancellationReason(), prescription.getCancelledAt(),
-                usable ? tokenGenerator.payload(token.getToken()) : null, usable);
+                prescription.getValidUntil(), prescription.getStatus(), expired,
+                visibleGeneralInstructions(prescription), visibleItems(prescription),
+                prescription.getCancellationReason(), prescription.getCancelledAt(), generationAllowed);
+    }
+
+    private List<PrescriptionItemResponse> visibleItems(Prescription prescription) {
+        return prescription.getStatus() == PrescriptionStatus.CANCELLED ? List.of() : items(prescription);
+    }
+
+    private String visibleGeneralInstructions(Prescription prescription) {
+        return prescription.getStatus() == PrescriptionStatus.CANCELLED
+                ? null : prescription.getGeneralInstructions();
     }
 
     private List<PrescriptionItemResponse> items(Prescription prescription) {
@@ -144,7 +144,7 @@ public class PrescriptionResponseMapper {
             throw new com.medisync.exception.ResourceConflictException(
                     "Prescription and consultation ownership are inconsistent");
         }
-        return new RelatedData(appointment, doctor, patient, doctorUser, patientUser, hospital, department,
+        return new RelatedData(consultation, appointment, doctor, patient, doctorUser, patientUser, hospital, department,
                 specialization);
     }
 
@@ -152,7 +152,8 @@ public class PrescriptionResponseMapper {
         return user.getFirstName() + " " + user.getLastName();
     }
 
-    private record RelatedData(Appointment appointment, DoctorProfile doctor, PatientProfile patient,
+    private record RelatedData(ConsultationSession consultation, Appointment appointment,
+                               DoctorProfile doctor, PatientProfile patient,
                                AppUser doctorUser, AppUser patientUser, Hospital hospital, Department department,
                                Specialization specialization) {}
 }

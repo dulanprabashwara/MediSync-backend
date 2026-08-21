@@ -32,7 +32,7 @@ public interface AppointmentSlotRepository extends JpaRepository<AppointmentSlot
               and slot.doctorId = :doctorId
               and slot.status = com.medisync.availability.entity.SlotStatus.AVAILABLE
               and window.active = true
-              and slot.startsAt >= :startsAt
+              and slot.startsAt > :startsAt
               and slot.startsAt < :endsAt
             order by slot.startsAt asc
             """)

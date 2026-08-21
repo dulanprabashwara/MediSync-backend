@@ -42,8 +42,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Service
@@ -66,6 +66,7 @@ public class PatientAppointmentService {
     private final AppointmentProperties properties;
     private final ConsultationSessionRepository consultationRepository;
     private final ConsultationRealtimePublisher realtimePublisher;
+    private final Clock clock;
 
     public PatientAppointmentService(CurrentUserService currentUserService,
                                      PatientProfileRepository patientProfileRepository,
@@ -81,7 +82,8 @@ public class PatientAppointmentService {
                                      AppointmentResponseMapper responseMapper,
                                      AppointmentProperties properties,
                                      ConsultationSessionRepository consultationRepository,
-                                     ConsultationRealtimePublisher realtimePublisher) {
+                                     ConsultationRealtimePublisher realtimePublisher,
+                                     Clock clock) {
         this.currentUserService = currentUserService;
         this.patientProfileRepository = patientProfileRepository;
         this.slotRepository = slotRepository;
@@ -97,6 +99,7 @@ public class PatientAppointmentService {
         this.properties = properties;
         this.consultationRepository = consultationRepository;
         this.realtimePublisher = realtimePublisher;
+        this.clock = clock;
     }
 
     @Transactional
@@ -112,7 +115,7 @@ public class PatientAppointmentService {
         if (slot.getStatus() != SlotStatus.AVAILABLE) {
             throw new ResourceConflictException("This appointment slot is no longer available");
         }
-        OffsetDateTime earliestAllowed = OffsetDateTime.now(ZoneOffset.UTC)
+        OffsetDateTime earliestAllowed = OffsetDateTime.now(clock)
                 .plusMinutes(properties.minimumLeadMinutes());
         if (!slot.getStartsAt().isAfter(earliestAllowed)) {
             throw new ResourceConflictException("This appointment time is in the past or too close to book");
@@ -161,7 +164,7 @@ public class PatientAppointmentService {
         Appointment appointment = appointmentRepository.findByIdForUpdate(appointmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
         requirePatientOwnership(patient.getId(), appointment);
-        if (!appointment.getScheduledStart().isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (!appointment.getScheduledStart().isAfter(OffsetDateTime.now(clock))) {
             throw new ResourceConflictException("Past appointments cannot be cancelled");
         }
         AppointmentStatus previousStatus = appointment.getStatus();

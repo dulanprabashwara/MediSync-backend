@@ -43,6 +43,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.OffsetDateTime;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
@@ -86,7 +88,8 @@ class PatientAppointmentServiceTest {
         service = new PatientAppointmentService(currentUserService, patientProfileRepository, slotRepository,
                 windowRepository, doctorProfileRepository, appUserRepository, hospitalRepository,
                 departmentRepository, specializationRepository, appointmentRepository, symptomsRepository,
-                responseMapper, new AppointmentProperties(0), consultationRepository, realtimePublisher);
+                responseMapper, new AppointmentProperties(0), consultationRepository, realtimePublisher,
+                Clock.systemUTC());
         UUID patientAuth = UUID.randomUUID();
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(patientAuth.toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
@@ -145,6 +148,23 @@ class PatientAppointmentServiceTest {
         allowPatientAndSlot();
         assertThatThrownBy(() -> service.create(jwt, request()))
                 .isInstanceOf(ResourceConflictException.class).hasMessageContaining("past");
+    }
+
+    @Test
+    void staleLoadedSlotIsRejectedUnderLockAfterCrossingLeadTime() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-08-21T08:00:00Z");
+        slot = new AppointmentSlot(window.getId(), doctor.getId(), now.plusMinutes(5), now.plusMinutes(35));
+        service = new PatientAppointmentService(currentUserService, patientProfileRepository, slotRepository,
+                windowRepository, doctorProfileRepository, appUserRepository, hospitalRepository,
+                departmentRepository, specializationRepository, appointmentRepository, symptomsRepository,
+                responseMapper, new AppointmentProperties(10), consultationRepository, realtimePublisher,
+                Clock.fixed(now.toInstant(), ZoneId.of("UTC")));
+        allowPatientAndSlot();
+
+        assertThatThrownBy(() -> service.create(jwt, request()))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("too close");
+        verify(slotRepository).findByIdForUpdate(slot.getId());
     }
 
     @Test

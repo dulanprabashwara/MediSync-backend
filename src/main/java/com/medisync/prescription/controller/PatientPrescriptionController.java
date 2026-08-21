@@ -3,6 +3,7 @@ package com.medisync.prescription.controller;
 import com.medisync.common.dto.PageResponse;
 import com.medisync.prescription.dto.PatientPrescriptionDetail;
 import com.medisync.prescription.dto.PatientPrescriptionSummary;
+import com.medisync.prescription.dto.PrescriptionQrResponse;
 import com.medisync.prescription.service.PrescriptionService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -26,5 +27,11 @@ public class PatientPrescriptionController {
     @GetMapping("/{prescriptionId}")
     public PatientPrescriptionDetail details(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID prescriptionId) {
         return service.patientDetails(jwt, prescriptionId);
+    }
+
+    @PostMapping("/{prescriptionId}/qr")
+    public PrescriptionQrResponse generateQr(@AuthenticationPrincipal Jwt jwt,
+                                             @PathVariable UUID prescriptionId) {
+        return service.generatePatientQr(jwt, prescriptionId);
     }
 }

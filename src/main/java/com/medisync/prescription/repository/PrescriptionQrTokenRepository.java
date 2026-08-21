@@ -10,5 +10,5 @@ public interface PrescriptionQrTokenRepository extends JpaRepository<Prescriptio
 
     Optional<PrescriptionQrToken> findByPrescriptionId(UUID prescriptionId);
 
-    boolean existsByToken(String token);
+    boolean existsByTokenHash(String tokenHash);
 }

@@ -23,10 +23,10 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -41,22 +41,26 @@ public class DoctorAvailabilityService {
     private final DoctorProfileRepository doctorProfileRepository;
     private final DoctorAvailabilityWindowRepository windowRepository;
     private final AppointmentSlotRepository slotRepository;
+    private final Clock clock;
 
     public DoctorAvailabilityService(CurrentUserService currentUserService,
                                      DoctorProfileRepository doctorProfileRepository,
                                      DoctorAvailabilityWindowRepository windowRepository,
-                                     AppointmentSlotRepository slotRepository) {
+                                     AppointmentSlotRepository slotRepository,
+                                     Clock clock) {
         this.currentUserService = currentUserService;
         this.doctorProfileRepository = doctorProfileRepository;
         this.windowRepository = windowRepository;
         this.slotRepository = slotRepository;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
     public List<AvailabilityWindowResponse> list(Jwt jwt) {
         DoctorProfile doctor = requireVerifiedDoctor(jwt, false);
-        return windowRepository.findByDoctorIdOrderByStartsAtAsc(doctor.getId()).stream()
-                .map(this::toResponse)
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        return windowRepository.findByDoctorIdAndEndsAtAfterOrderByStartsAtAsc(doctor.getId(), now).stream()
+                .map(window -> toResponse(window, now))
                 .toList();
     }
 
@@ -90,7 +94,7 @@ public class DoctorAvailabilityService {
         if (!window.isActive()) {
             throw new ResourceConflictException("This availability window is already inactive");
         }
-        if (!window.getEndsAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (!window.getEndsAt().isAfter(OffsetDateTime.now(clock))) {
             throw new ResourceConflictException("Past availability cannot be changed");
         }
 
@@ -108,7 +112,7 @@ public class DoctorAvailabilityService {
     public AppointmentSlotResponse block(Jwt jwt, UUID slotId) {
         DoctorProfile doctor = requireVerifiedDoctor(jwt, false);
         AppointmentSlot slot = lockedOwnedSlot(doctor.getId(), slotId);
-        if (!slot.getStartsAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (!slot.getStartsAt().isAfter(OffsetDateTime.now(clock))) {
             throw new ResourceConflictException("Past slots cannot be changed");
         }
         slot.block();
@@ -121,7 +125,7 @@ public class DoctorAvailabilityService {
         AppointmentSlot slot = lockedOwnedSlot(doctor.getId(), slotId);
         DoctorAvailabilityWindow window = windowRepository.findById(slot.getAvailabilityWindowId())
                 .orElseThrow(() -> new ResourceNotFoundException("Availability window not found"));
-        if (!window.isActive() || !slot.getStartsAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (!window.isActive() || !slot.getStartsAt().isAfter(OffsetDateTime.now(clock))) {
             throw new ResourceConflictException("This slot cannot be made available");
         }
         slot.unblock();
@@ -144,7 +148,7 @@ public class DoctorAvailabilityService {
         if (!request.startsAt().isBefore(request.endsAt())) {
             throw new InvalidRequestException("Availability start must be before its end");
         }
-        if (!request.startsAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (!request.startsAt().isAfter(OffsetDateTime.now(clock))) {
             throw new InvalidRequestException("Availability must start in the future");
         }
         if (!ALLOWED_DURATIONS.contains(request.slotDurationMinutes())) {
@@ -182,9 +186,10 @@ public class DoctorAvailabilityService {
         }
     }
 
-    private AvailabilityWindowResponse toResponse(DoctorAvailabilityWindow window) {
+    private AvailabilityWindowResponse toResponse(DoctorAvailabilityWindow window, OffsetDateTime now) {
         List<AppointmentSlotResponse> slots = slotRepository
                 .findByAvailabilityWindowIdOrderByStartsAtAsc(window.getId()).stream()
+                .filter(slot -> slot.getStartsAt().isAfter(now))
                 .map(AppointmentSlotResponse::from)
                 .toList();
         return AvailabilityWindowResponse.from(window, slots);

@@ -66,8 +66,14 @@ public class PrescriptionAccessService {
     }
 
     public PatientPrescriptionAccess requirePatientPrescription(Jwt jwt, UUID prescriptionId) {
+        return requirePatientPrescription(jwt, prescriptionId, false);
+    }
+
+    public PatientPrescriptionAccess requirePatientPrescription(Jwt jwt, UUID prescriptionId, boolean forUpdate) {
         PatientProfile patient = requirePatient(jwt);
-        Prescription prescription = prescriptionRepository.findById(prescriptionId)
+        Prescription prescription = (forUpdate
+                ? prescriptionRepository.findByIdForUpdate(prescriptionId)
+                : prescriptionRepository.findById(prescriptionId))
                 .orElseThrow(() -> new ResourceNotFoundException("Prescription not found"));
         if (!patient.getId().equals(prescription.getPatientId())) {
             throw new AccessDeniedException("This prescription belongs to another patient");

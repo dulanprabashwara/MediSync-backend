@@ -12,6 +12,9 @@ import java.util.UUID;
 public interface DoctorAvailabilityWindowRepository extends JpaRepository<DoctorAvailabilityWindow, UUID> {
     List<DoctorAvailabilityWindow> findByDoctorIdOrderByStartsAtAsc(UUID doctorId);
 
+    List<DoctorAvailabilityWindow> findByDoctorIdAndEndsAtAfterOrderByStartsAtAsc(UUID doctorId,
+                                                                                  OffsetDateTime now);
+
     @Query("""
             select count(window) > 0 from DoctorAvailabilityWindow window
             where window.doctorId = :doctorId

@@ -3,6 +3,7 @@ package com.medisync.doctor.service;
 import com.medisync.availability.dto.AppointmentSlotResponse;
 import com.medisync.availability.repository.AppointmentSlotRepository;
 import com.medisync.common.dto.PageResponse;
+import com.medisync.config.AppointmentProperties;
 import com.medisync.department.entity.Department;
 import com.medisync.department.repository.DepartmentRepository;
 import com.medisync.doctor.dto.DoctorDetailsResponse;
@@ -27,10 +28,10 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
@@ -48,6 +49,8 @@ public class PatientDoctorDiscoveryService {
     private final DepartmentRepository departmentRepository;
     private final SpecializationRepository specializationRepository;
     private final AppointmentSlotRepository slotRepository;
+    private final AppointmentProperties appointmentProperties;
+    private final Clock clock;
 
     public PatientDoctorDiscoveryService(CurrentUserService currentUserService,
                                          DoctorProfileRepository doctorProfileRepository,
@@ -55,7 +58,9 @@ public class PatientDoctorDiscoveryService {
                                          HospitalRepository hospitalRepository,
                                          DepartmentRepository departmentRepository,
                                          SpecializationRepository specializationRepository,
-                                         AppointmentSlotRepository slotRepository) {
+                                         AppointmentSlotRepository slotRepository,
+                                         AppointmentProperties appointmentProperties,
+                                         Clock clock) {
         this.currentUserService = currentUserService;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appUserRepository = appUserRepository;
@@ -63,6 +68,8 @@ public class PatientDoctorDiscoveryService {
         this.departmentRepository = departmentRepository;
         this.specializationRepository = specializationRepository;
         this.slotRepository = slotRepository;
+        this.appointmentProperties = appointmentProperties;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -100,9 +107,10 @@ public class PatientDoctorDiscoveryService {
 
         OffsetDateTime startsAt = from.atStartOfDay(DEFAULT_PATIENT_ZONE).toOffsetDateTime();
         OffsetDateTime endsAt = to.plusDays(1).atStartOfDay(DEFAULT_PATIENT_ZONE).toOffsetDateTime();
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        if (startsAt.isBefore(now)) {
-            startsAt = now;
+        OffsetDateTime earliestBookable = OffsetDateTime.now(clock)
+                .plusMinutes(appointmentProperties.minimumLeadMinutes());
+        if (startsAt.isBefore(earliestBookable)) {
+            startsAt = earliestBookable;
         }
         if (!startsAt.isBefore(endsAt)) {
             return java.util.List.of();

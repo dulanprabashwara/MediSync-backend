@@ -46,4 +46,9 @@ public class DoctorPrescriptionController {
             @Valid @RequestBody CancelPrescriptionRequest request) {
         return service.cancel(jwt, prescriptionId, request.reason());
     }
+
+    @DeleteMapping("/{prescriptionId}")
+    public void discard(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID prescriptionId) {
+        service.discardDraft(jwt, prescriptionId);
+    }
 }

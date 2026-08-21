@@ -8,6 +8,8 @@ import com.medisync.consultation.entity.ConsultationClinicalNote;
 import com.medisync.consultation.entity.ConsultationStatus;
 import com.medisync.consultation.repository.ConsultationClinicalNoteRepository;
 import com.medisync.exception.ResourceConflictException;
+import com.medisync.prescription.entity.PrescriptionStatus;
+import com.medisync.prescription.repository.PrescriptionRepository;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,15 +23,18 @@ public class ConsultationService {
     private final ConsultationResponseMapper responseMapper;
     private final ConsultationClinicalNoteRepository clinicalNoteRepository;
     private final ConsultationRealtimePublisher realtimePublisher;
+    private final PrescriptionRepository prescriptionRepository;
 
     public ConsultationService(ConsultationAccessService accessService,
                                ConsultationResponseMapper responseMapper,
                                ConsultationClinicalNoteRepository clinicalNoteRepository,
-                               ConsultationRealtimePublisher realtimePublisher) {
+                               ConsultationRealtimePublisher realtimePublisher,
+                               PrescriptionRepository prescriptionRepository) {
         this.accessService = accessService;
         this.responseMapper = responseMapper;
         this.clinicalNoteRepository = clinicalNoteRepository;
         this.realtimePublisher = realtimePublisher;
+        this.prescriptionRepository = prescriptionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -56,6 +61,10 @@ public class ConsultationService {
     public ConsultationResponse complete(Jwt jwt, UUID consultationId) {
         ConsultationAccessService.ConsultationContext context =
                 accessService.requireDoctor(jwt, consultationId, true);
+        if (prescriptionRepository.existsByConsultationIdAndStatus(consultationId, PrescriptionStatus.DRAFT)) {
+            throw new ResourceConflictException(
+                    "Discard or issue the draft prescription before completing this consultation");
+        }
         context.consultation().complete();
         realtimePublisher.publishAfterCommit(context.appointment(),
                 ConsultationEvent.statusChanged(consultationId, context.consultation().getStatus()));

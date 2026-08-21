@@ -7,6 +7,7 @@ import com.medisync.consultation.entity.ConsultationSession;
 import com.medisync.consultation.entity.ConsultationStatus;
 import com.medisync.consultation.repository.ConsultationClinicalNoteRepository;
 import com.medisync.exception.ResourceConflictException;
+import com.medisync.prescription.repository.PrescriptionRepository;
 import com.medisync.user.entity.AccountStatus;
 import com.medisync.user.entity.AppUser;
 import com.medisync.user.entity.DoctorProfile;
@@ -37,6 +38,7 @@ class ConsultationServiceTest {
     @Mock ConsultationResponseMapper responseMapper;
     @Mock ConsultationClinicalNoteRepository noteRepository;
     @Mock ConsultationRealtimePublisher realtimePublisher;
+    @Mock PrescriptionRepository prescriptionRepository;
 
     private ConsultationService service;
     private Jwt jwt;
@@ -44,7 +46,8 @@ class ConsultationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ConsultationService(accessService, responseMapper, noteRepository, realtimePublisher);
+        service = new ConsultationService(accessService, responseMapper, noteRepository, realtimePublisher,
+                prescriptionRepository);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(UUID.randomUUID().toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
         context = scheduledContext();
@@ -69,6 +72,23 @@ class ConsultationServiceTest {
 
         assertThatThrownBy(() -> service.complete(jwt, context.consultation().getId()))
                 .isInstanceOf(ResourceConflictException.class);
+    }
+
+    @Test
+    void draftBlocksCompletionUntilResolved() {
+        context.consultation().start();
+        when(accessService.requireDoctor(jwt, context.consultation().getId(), true)).thenReturn(context);
+        when(prescriptionRepository.existsByConsultationIdAndStatus(
+                context.consultation().getId(), com.medisync.prescription.entity.PrescriptionStatus.DRAFT))
+                .thenReturn(true, false);
+
+        assertThatThrownBy(() -> service.complete(jwt, context.consultation().getId()))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("Discard or issue");
+        assertThat(context.consultation().getStatus()).isEqualTo(ConsultationStatus.IN_PROGRESS);
+
+        service.complete(jwt, context.consultation().getId());
+        assertThat(context.consultation().getStatus()).isEqualTo(ConsultationStatus.COMPLETED);
     }
 
     @Test

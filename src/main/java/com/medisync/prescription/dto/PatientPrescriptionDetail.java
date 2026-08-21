@@ -24,7 +24,6 @@ public record PatientPrescriptionDetail(
         List<PrescriptionItemResponse> items,
         String cancellationReason,
         OffsetDateTime cancelledAt,
-        String qrPayload,
-        boolean qrUsable
+        boolean qrGenerationAllowed
 ) {
 }
