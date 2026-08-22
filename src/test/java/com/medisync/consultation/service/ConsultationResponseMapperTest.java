@@ -11,6 +11,8 @@ import com.medisync.hospital.entity.Hospital;
 import com.medisync.hospital.repository.HospitalRepository;
 import com.medisync.specialization.entity.Specialization;
 import com.medisync.specialization.repository.SpecializationRepository;
+import com.medisync.pharmacy.repository.PrescriptionDispensationRepository;
+import com.medisync.prescription.repository.PrescriptionRepository;
 import com.medisync.user.entity.AccountStatus;
 import com.medisync.user.entity.AppUser;
 import com.medisync.user.entity.DoctorProfile;
@@ -22,12 +24,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,13 +43,17 @@ class ConsultationResponseMapperTest {
     @Mock HospitalRepository hospitalRepository;
     @Mock DepartmentRepository departmentRepository;
     @Mock SpecializationRepository specializationRepository;
+    @Mock PrescriptionRepository prescriptionRepository;
+    @Mock PrescriptionDispensationRepository dispensationRepository;
 
+    private final Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
     private ConsultationResponseMapper mapper;
 
     @BeforeEach
     void setUp() {
         mapper = new ConsultationResponseMapper(
-                symptomsRepository, hospitalRepository, departmentRepository, specializationRepository);
+                symptomsRepository, hospitalRepository, departmentRepository, specializationRepository,
+                prescriptionRepository, dispensationRepository, clock);
     }
 
     @Test
@@ -104,6 +114,7 @@ class ConsultationResponseMapperTest {
         when(departmentRepository.findById(department.getId())).thenReturn(Optional.of(department));
         when(specializationRepository.findById(specialization.getId())).thenReturn(Optional.of(specialization));
         when(symptomsRepository.findByAppointmentId(appointment.getId())).thenReturn(Optional.of(symptoms));
+        when(prescriptionRepository.findByConsultationIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
 
         return new ConsultationAccessService.ConsultationContext(
                 consultation, appointment, patient, doctor, patientUser, doctorUser);

@@ -1,6 +1,10 @@
 spring:
   application:
     name: medisync-api
+  servlet:
+    multipart:
+      max-file-size: ${MEDIA_MAX_IMAGE_BYTES:5242880B}
+      max-request-size: ${MEDIA_MAX_IMAGE_BYTES:5242880B}
   datasource:
     url: jdbc:postgresql://${DB_HOST:db.cgekbpqwyyfpvcejydet.supabase.co}:${DB_PORT:5432}/${DB_NAME:postgres}?sslmode=require
     username: ${DB_USERNAME:postgres}

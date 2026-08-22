@@ -5,7 +5,6 @@ import com.medisync.audit.service.AuditService;
 import com.medisync.exception.ResourceNotFoundException;
 import com.medisync.media.ImageUploadValidator;
 import com.medisync.media.MediaStorageService;
-import com.medisync.media.MediaStorageUnavailableException;
 import com.medisync.media.MediaUrlService;
 import com.medisync.media.ValidatedImage;
 import com.medisync.user.dto.UserResponse;
@@ -89,10 +88,12 @@ public class ProfileImageService {
 
     private void bestEffortDelete(String key) {
         if (key == null || key.isBlank()) return;
-        try {
-            storageService.delete(key);
-        } catch (MediaStorageUnavailableException exception) {
-            log.warn("A superseded private media object could not be removed");
-        }
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                storageService.delete(key);
+            } catch (Exception exception) {
+                log.warn("A superseded private media object could not be removed: {}", exception.getMessage());
+            }
+        });
     }
 }

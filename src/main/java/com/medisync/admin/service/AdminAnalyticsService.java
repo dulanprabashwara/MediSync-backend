@@ -57,12 +57,12 @@ public class AdminAnalyticsService {
             LocalDate date = firstDay.plusDays(offset);
             points.put(date, new MutablePoint(date));
         }
-        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM app_users WHERE created_at >= ? GROUP BY day", from, Metric.USERS);
-        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM appointments WHERE created_at >= ? GROUP BY day", from, Metric.APPOINTMENTS);
-        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM consultation_sessions WHERE created_at >= ? GROUP BY day", from, Metric.CONSULTATIONS);
-        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM prescriptions WHERE created_at >= ? GROUP BY day", from, Metric.PRESCRIPTIONS);
-        fill(points, "SELECT (dispensed_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM prescription_dispensations WHERE dispensed_at >= ? GROUP BY day", from, Metric.DISPENSATIONS);
-        fill(points, "SELECT (sent_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM consultation_messages WHERE sent_at >= ? GROUP BY day", from, Metric.MESSAGES);
+        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date AS activity_day, COALESCE(COUNT(*), 0) total FROM app_users WHERE created_at >= ? GROUP BY 1", from, Metric.USERS);
+        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date AS activity_day, COALESCE(COUNT(*), 0) total FROM appointments WHERE created_at >= ? GROUP BY 1", from, Metric.APPOINTMENTS);
+        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date AS activity_day, COALESCE(COUNT(*), 0) total FROM consultation_sessions WHERE created_at >= ? GROUP BY 1", from, Metric.CONSULTATIONS);
+        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date AS activity_day, COALESCE(COUNT(*), 0) total FROM prescriptions WHERE created_at >= ? GROUP BY 1", from, Metric.PRESCRIPTIONS);
+        fill(points, "SELECT (dispensed_at AT TIME ZONE 'UTC')::date AS activity_day, COALESCE(COUNT(*), 0) total FROM prescription_dispensations WHERE dispensed_at >= ? GROUP BY 1", from, Metric.DISPENSATIONS);
+        fill(points, "SELECT (sent_at AT TIME ZONE 'UTC')::date AS activity_day, COALESCE(COUNT(*), 0) total FROM consultation_messages WHERE sent_at >= ? GROUP BY 1", from, Metric.MESSAGES);
         return points.values().stream().map(MutablePoint::response).toList();
     }
 
@@ -116,7 +116,7 @@ public class AdminAnalyticsService {
 
     private void fill(Map<LocalDate, MutablePoint> points, String sql, OffsetDateTime from, Metric metric) {
         jdbcTemplate.query(sql, row -> {
-            LocalDate date = row.getObject("day", LocalDate.class);
+            LocalDate date = row.getObject("activity_day", LocalDate.class);
             MutablePoint point = points.get(date);
             if (point != null) point.set(metric, row.getLong("total"));
         }, Timestamp.from(from.toInstant()));

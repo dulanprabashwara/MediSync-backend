@@ -38,6 +38,8 @@ public record DoctorPrescriptionResponse(
         OffsetDateTime cancelledAt,
         String cancellationReason,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        boolean cancellationAllowed,
+        String cancellationBlockedReason
 ) {
 }

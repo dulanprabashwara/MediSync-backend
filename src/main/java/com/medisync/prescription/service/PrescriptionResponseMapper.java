@@ -77,6 +77,7 @@ public class PrescriptionResponseMapper {
         RelatedData data = relatedData(prescription);
         List<PrescriptionItemResponse> items = visibleItems(prescription);
         DispensingData dispensing = dispensingData(prescription);
+        CancellationEligibility cancellation = cancellationEligibility(prescription, data, dispensing);
         return new DoctorPrescriptionResponse(prescription.getId(), prescription.getConsultationId(),
                 data.consultation().getStatus(), prescription.getStatus(), fullName(data.patientUser()),
                 "Dr. " + fullName(data.doctorUser()),
@@ -87,7 +88,8 @@ public class PrescriptionResponseMapper {
                 prescription.getDoctorFeeConfirmedAt(), items, prescription.getIssuedAt(), prescription.getValidUntil(),
                 expired(prescription), dispensing.status(), dispensing.dispensedAt(), dispensing.pharmacyName(),
                 prescription.getCancelledAt(), prescription.getCancellationReason(),
-                prescription.getCreatedAt(), prescription.getUpdatedAt());
+                prescription.getCreatedAt(), prescription.getUpdatedAt(),
+                cancellation.allowed(), cancellation.reason());
     }
 
     public PatientPrescriptionSummary toPatientSummary(Prescription prescription) {
@@ -187,4 +189,28 @@ public class PrescriptionResponseMapper {
                                Specialization specialization) {}
 
     private record DispensingData(DispensingStatus status, OffsetDateTime dispensedAt, String pharmacyName) {}
+
+    private record CancellationEligibility(boolean allowed, String reason) {
+        static CancellationEligibility ofAllowed() { return new CancellationEligibility(true, null); }
+        static CancellationEligibility ofBlocked(String reason) { return new CancellationEligibility(false, reason); }
+    }
+
+    private CancellationEligibility cancellationEligibility(Prescription prescription, RelatedData data,
+                                                             DispensingData dispensing) {
+        if (prescription.getStatus() != PrescriptionStatus.ISSUED) {
+            return CancellationEligibility.ofBlocked("Only an issued prescription can be cancelled.");
+        }
+        if (dispensing.status() == DispensingStatus.DISPENSED) {
+            return CancellationEligibility.ofBlocked("A dispensed prescription cannot be cancelled.");
+        }
+        if (data.consultation().getStatus() == com.medisync.consultation.entity.ConsultationStatus.COMPLETED) {
+            return CancellationEligibility.ofBlocked(
+                    "This prescription cannot be cancelled after the consultation has been completed.");
+        }
+        if (prescription.getDoctorFeeStatus() == com.medisync.prescription.entity.DoctorFeeStatus.CONFIRMED) {
+            return CancellationEligibility.ofBlocked(
+                    "This prescription cannot be cancelled after payment has been confirmed.");
+        }
+        return CancellationEligibility.ofAllowed();
+    }
 }

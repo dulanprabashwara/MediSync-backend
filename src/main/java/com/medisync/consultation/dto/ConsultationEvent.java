@@ -18,4 +18,9 @@ public record ConsultationEvent(
         return new ConsultationEvent(ConsultationEventType.CONSULTATION_STATUS_CHANGED,
                 consultationId, null, status);
     }
+
+    public static ConsultationEvent paymentStatusChanged(UUID consultationId) {
+        return new ConsultationEvent(ConsultationEventType.PAYMENT_STATUS_CHANGED,
+                consultationId, null, null);
+    }
 }

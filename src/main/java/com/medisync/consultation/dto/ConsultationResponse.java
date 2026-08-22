@@ -26,6 +26,7 @@ public record ConsultationResponse(
         OffsetDateTime completedAt,
         OffsetDateTime cancelledAt,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        ConsultationPaymentSummary paymentSummary
 ) {
 }

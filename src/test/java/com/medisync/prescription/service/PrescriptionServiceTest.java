@@ -60,6 +60,7 @@ class PrescriptionServiceTest {
     @Mock PrescriptionQrTokenGenerator tokenGenerator;
     @Mock CurrentUserService currentUserService;
     @Mock AuditService auditService;
+    @Mock com.medisync.consultation.service.ConsultationRealtimePublisher realtimePublisher;
 
     private final PrescriptionQrTokenHasher tokenHasher = new PrescriptionQrTokenHasher();
     private final OffsetDateTime now = OffsetDateTime.parse("2026-08-21T08:00:00Z");
@@ -71,7 +72,7 @@ class PrescriptionServiceTest {
         service = new PrescriptionService(prescriptionRepository, itemRepository, tokenRepository,
                 dispensationRepository, accessService, consultationAccessService, mapper, tokenGenerator,
                 tokenHasher, Clock.fixed(now.toInstant(), ZoneId.of("UTC")),
-                new PrescriptionPaymentProperties("LKR"), currentUserService, auditService);
+                new PrescriptionPaymentProperties("LKR"), currentUserService, auditService, realtimePublisher);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(UUID.randomUUID().toString())
                 .issuedAt(now.toInstant()).expiresAt(now.plusMinutes(5).toInstant()).build();
     }

@@ -37,6 +37,8 @@ import java.util.Map;
 import com.medisync.audit.AuditActions;
 import com.medisync.audit.service.AuditService;
 import com.medisync.config.PrescriptionPaymentProperties;
+import com.medisync.consultation.dto.ConsultationEvent;
+import com.medisync.consultation.service.ConsultationRealtimePublisher;
 import com.medisync.user.service.CurrentUserService;
 import com.medisync.user.entity.AppUser;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +62,7 @@ public class PrescriptionService {
     private final PrescriptionPaymentProperties paymentProperties;
     private final CurrentUserService currentUserService;
     private final AuditService auditService;
+    private final ConsultationRealtimePublisher realtimePublisher;
 
     @Autowired
     public PrescriptionService(PrescriptionRepository prescriptionRepository,
@@ -74,7 +77,8 @@ public class PrescriptionService {
                                Clock clock,
                                PrescriptionPaymentProperties paymentProperties,
                                CurrentUserService currentUserService,
-                               AuditService auditService) {
+                               AuditService auditService,
+                               ConsultationRealtimePublisher realtimePublisher) {
         this.prescriptionRepository = prescriptionRepository;
         this.itemRepository = itemRepository;
         this.tokenRepository = tokenRepository;
@@ -88,6 +92,7 @@ public class PrescriptionService {
         this.paymentProperties = paymentProperties;
         this.currentUserService = currentUserService;
         this.auditService = auditService;
+        this.realtimePublisher = realtimePublisher;
     }
 
     PrescriptionService(PrescriptionRepository prescriptionRepository,
@@ -102,7 +107,7 @@ public class PrescriptionService {
                         Clock clock) {
         this(prescriptionRepository, itemRepository, tokenRepository, dispensationRepository, accessService,
                 consultationAccessService, mapper, tokenGenerator, tokenHasher, clock,
-                new PrescriptionPaymentProperties("LKR"), null, null);
+                new PrescriptionPaymentProperties("LKR"), null, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -197,6 +202,14 @@ public class PrescriptionService {
         if (dispensationRepository.existsByPrescriptionId(prescriptionId)) {
             throw new ResourceConflictException("A dispensed prescription cannot be cancelled");
         }
+        if (context.consultation().getStatus() == ConsultationStatus.COMPLETED) {
+            throw new ResourceConflictException(
+                    "This prescription cannot be cancelled after the consultation has been completed");
+        }
+        if (access.prescription().getDoctorFeeStatus() == com.medisync.prescription.entity.DoctorFeeStatus.CONFIRMED) {
+            throw new ResourceConflictException(
+                    "This prescription cannot be cancelled after payment has been confirmed");
+        }
         OffsetDateTime now = OffsetDateTime.now(clock);
         String normalizedReason = required(reason);
         if (normalizedReason.length() < 3 || normalizedReason.length() > 1000) {
@@ -281,6 +294,8 @@ public class PrescriptionService {
         prescriptionRepository.saveAndFlush(access.prescription());
         auditService.record(doctorUser, AuditActions.DOCTOR_FEE_CONFIRMED, "PRESCRIPTION", prescriptionId,
                 Map.of("paymentStatus", access.prescription().getDoctorFeeStatus().name(), "feeRequired", true));
+        realtimePublisher.publishAfterCommit(context.appointment(),
+                ConsultationEvent.paymentStatusChanged(access.prescription().getConsultationId()));
         return mapper.toDoctorResponse(access.prescription());
     }
 
