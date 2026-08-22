@@ -33,16 +33,16 @@ public class AdminAnalyticsService {
     @Transactional(readOnly = true)
     public AdminAnalyticsSummary summary() {
         return new AdminAnalyticsSummary(
-                grouped("SELECT role AS label, COUNT(*) AS total FROM app_users GROUP BY role"),
-                grouped("SELECT status AS label, COUNT(*) AS total FROM app_users GROUP BY status"),
+                grouped("SELECT role AS label, COALESCE(COUNT(*), 0) AS total FROM app_users GROUP BY role"),
+                grouped("SELECT status AS label, COALESCE(COUNT(*), 0) AS total FROM app_users GROUP BY status"),
                 professionalVerification(),
-                grouped("SELECT status AS label, COUNT(*) AS total FROM appointments GROUP BY status"),
-                grouped("SELECT status AS label, COUNT(*) AS total FROM consultation_sessions GROUP BY status"),
-                grouped("SELECT status AS label, COUNT(*) AS total FROM prescriptions GROUP BY status"),
-                grouped("SELECT doctor_fee_status AS label, COUNT(*) AS total FROM prescriptions GROUP BY doctor_fee_status"),
-                scalar("SELECT COUNT(*) FROM prescription_dispensations"),
-                scalar("SELECT COUNT(*) FROM consultation_messages"),
-                scalar("SELECT COUNT(*) FROM consultation_message_attachments")
+                grouped("SELECT status AS label, COALESCE(COUNT(*), 0) AS total FROM appointments GROUP BY status"),
+                grouped("SELECT status AS label, COALESCE(COUNT(*), 0) AS total FROM consultation_sessions GROUP BY status"),
+                grouped("SELECT status AS label, COALESCE(COUNT(*), 0) AS total FROM prescriptions GROUP BY status"),
+                grouped("SELECT doctor_fee_status AS label, COALESCE(COUNT(*), 0) AS total FROM prescriptions GROUP BY doctor_fee_status"),
+                scalar("SELECT COALESCE(COUNT(*), 0) FROM prescription_dispensations"),
+                scalar("SELECT COALESCE(COUNT(*), 0) FROM consultation_messages"),
+                scalar("SELECT COALESCE(COUNT(*), 0) FROM consultation_message_attachments")
         );
     }
 
@@ -57,12 +57,12 @@ public class AdminAnalyticsService {
             LocalDate date = firstDay.plusDays(offset);
             points.put(date, new MutablePoint(date));
         }
-        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COUNT(*) total FROM app_users WHERE created_at >= ? GROUP BY day", from, Metric.USERS);
-        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COUNT(*) total FROM appointments WHERE created_at >= ? GROUP BY day", from, Metric.APPOINTMENTS);
-        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COUNT(*) total FROM consultation_sessions WHERE created_at >= ? GROUP BY day", from, Metric.CONSULTATIONS);
-        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COUNT(*) total FROM prescriptions WHERE created_at >= ? GROUP BY day", from, Metric.PRESCRIPTIONS);
-        fill(points, "SELECT (dispensed_at AT TIME ZONE 'UTC')::date day, COUNT(*) total FROM prescription_dispensations WHERE dispensed_at >= ? GROUP BY day", from, Metric.DISPENSATIONS);
-        fill(points, "SELECT (sent_at AT TIME ZONE 'UTC')::date day, COUNT(*) total FROM consultation_messages WHERE sent_at >= ? GROUP BY day", from, Metric.MESSAGES);
+        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM app_users WHERE created_at >= ? GROUP BY day", from, Metric.USERS);
+        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM appointments WHERE created_at >= ? GROUP BY day", from, Metric.APPOINTMENTS);
+        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM consultation_sessions WHERE created_at >= ? GROUP BY day", from, Metric.CONSULTATIONS);
+        fill(points, "SELECT (created_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM prescriptions WHERE created_at >= ? GROUP BY day", from, Metric.PRESCRIPTIONS);
+        fill(points, "SELECT (dispensed_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM prescription_dispensations WHERE dispensed_at >= ? GROUP BY day", from, Metric.DISPENSATIONS);
+        fill(points, "SELECT (sent_at AT TIME ZONE 'UTC')::date day, COALESCE(COUNT(*), 0) total FROM consultation_messages WHERE sent_at >= ? GROUP BY day", from, Metric.MESSAGES);
         return points.values().stream().map(MutablePoint::response).toList();
     }
 
@@ -73,19 +73,19 @@ public class AdminAnalyticsService {
         OffsetDateTime from = OffsetDateTime.now(ZoneOffset.UTC).minusDays(days);
         return new AdminActivityResponse(
                 rankings("""
-                        SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) display_name, COUNT(a.id) total
+                        SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) display_name, COALESCE(COUNT(a.id), 0) total
                         FROM app_users u JOIN doctor_profiles d ON d.user_id = u.id
                         JOIN appointments a ON a.doctor_id = d.id AND a.created_at >= ?
                         GROUP BY u.id, u.first_name, u.last_name ORDER BY total DESC, display_name LIMIT ?
                         """, from, limit),
                 rankings("""
-                        SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) display_name, COUNT(a.id) total
+                        SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) display_name, COALESCE(COUNT(a.id), 0) total
                         FROM app_users u JOIN patient_profiles p ON p.user_id = u.id
                         JOIN appointments a ON a.patient_id = p.id AND a.created_at >= ?
                         GROUP BY u.id, u.first_name, u.last_name ORDER BY total DESC, display_name LIMIT ?
                         """, from, limit),
                 rankings("""
-                        SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) display_name, COUNT(x.id) total
+                        SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) display_name, COALESCE(COUNT(x.id), 0) total
                         FROM app_users u JOIN pharmacist_profiles p ON p.user_id = u.id
                         JOIN prescription_dispensations x ON x.pharmacist_id = p.id AND x.dispensed_at >= ?
                         GROUP BY u.id, u.first_name, u.last_name ORDER BY total DESC, display_name LIMIT ?
@@ -95,9 +95,9 @@ public class AdminAnalyticsService {
 
     private Map<String, Long> professionalVerification() {
         Map<String, Long> counts = new LinkedHashMap<>();
-        grouped("SELECT 'DOCTOR_' || verification_status AS label, COUNT(*) total FROM doctor_profiles GROUP BY verification_status")
+        grouped("SELECT 'DOCTOR_' || verification_status AS label, COALESCE(COUNT(*), 0) total FROM doctor_profiles GROUP BY verification_status")
                 .forEach(counts::put);
-        grouped("SELECT 'PHARMACIST_' || verification_status AS label, COUNT(*) total FROM pharmacist_profiles GROUP BY verification_status")
+        grouped("SELECT 'PHARMACIST_' || verification_status AS label, COALESCE(COUNT(*), 0) total FROM pharmacist_profiles GROUP BY verification_status")
                 .forEach(counts::put);
         return counts;
     }
@@ -119,12 +119,12 @@ public class AdminAnalyticsService {
             LocalDate date = row.getObject("day", LocalDate.class);
             MutablePoint point = points.get(date);
             if (point != null) point.set(metric, row.getLong("total"));
-        }, from);
+        }, Timestamp.from(from.toInstant()));
     }
 
     private List<AdminActivityRanking> rankings(String sql, OffsetDateTime from, int limit) {
         return jdbcTemplate.query(sql, (row, index) -> new AdminActivityRanking(
-                row.getObject("id", UUID.class), row.getString("display_name"), row.getLong("total")), from, limit);
+                row.getObject("id", UUID.class), row.getString("display_name"), row.getLong("total")), Timestamp.from(from.toInstant()), limit);
     }
 
     private void validateDays(int days) {
