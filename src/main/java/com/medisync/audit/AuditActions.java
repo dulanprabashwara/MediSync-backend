@@ -36,6 +36,7 @@ public final class AuditActions {
     public static final String CONSULTATION_STARTED = "CONSULTATION_STARTED";
     public static final String CONSULTATION_COMPLETED = "CONSULTATION_COMPLETED";
     public static final String CLINICAL_NOTE_UPDATED = "CLINICAL_NOTE_UPDATED";
+    public static final String USER_ACCOUNT_DELETED = "USER_ACCOUNT_DELETED";
 
     private AuditActions() {
     }

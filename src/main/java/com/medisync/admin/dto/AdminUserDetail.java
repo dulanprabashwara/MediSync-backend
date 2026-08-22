@@ -10,6 +10,7 @@ public record AdminUserDetail(
         Map<String, Object> roleProfile,
         Map<String, Long> operationalCounts,
         List<AdminBanHistoryResponse> banHistory,
-        List<AuditEventResponse> recentActivity
+        List<AuditEventResponse> recentActivity,
+        Map<String, Object> deletionMetadata
 ) {
 }

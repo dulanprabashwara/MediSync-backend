@@ -96,4 +96,8 @@ public class ProfileImageService {
             }
         });
     }
+
+    public void deleteProfileImage(String key) {
+        bestEffortDelete(key);
+    }
 }

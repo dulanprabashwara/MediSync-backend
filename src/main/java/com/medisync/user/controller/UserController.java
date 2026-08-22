@@ -4,6 +4,7 @@ import com.medisync.user.dto.OnboardingRequest;
 import com.medisync.user.dto.UserResponse;
 import com.medisync.user.dto.AccountStatusResponse;
 import com.medisync.user.service.ProfileImageService;
+import com.medisync.user.service.UserDeletionService;
 import com.medisync.user.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -25,10 +26,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class UserController {
 
     private final UserService userService;
+    private final UserDeletionService userDeletionService;
     private ProfileImageService profileImageService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, UserDeletionService userDeletionService) {
         this.userService = userService;
+        this.userDeletionService = userDeletionService;
     }
 
     @Autowired(required = false)
@@ -55,6 +58,12 @@ public class UserController {
     @GetMapping("/me")
     public UserResponse me(@AuthenticationPrincipal Jwt jwt) {
         return userService.getCurrentUser(jwt);
+    }
+
+    @DeleteMapping("/me")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteSelfAccount(@AuthenticationPrincipal Jwt jwt) {
+        userDeletionService.deleteSelfAccount(jwt);
     }
 
     @PostMapping("/onboarding")

@@ -145,9 +145,19 @@ public class AdminUserService {
     public AdminUserDetail details(UUID userId) {
         AppUser user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User account not found"));
+                
+        Map<String, Object> deletionMetadata = null;
+        if (user.getStatus() == AccountStatus.DELETED) {
+            deletionMetadata = new LinkedHashMap<>();
+            put(deletionMetadata, "deletedAt", user.getDeletedAt());
+            put(deletionMetadata, "deletedByUserId", user.getDeletedByUserId());
+            put(deletionMetadata, "deletionReason", user.getDeletionReason());
+            put(deletionMetadata, "deletionSource", user.getDeletionSource());
+        }
+        
         return new AdminUserDetail(summary(user), roleProfile(user), operationalCounts(user),
                 banRepository.findByUserIdOrderByBannedAtDesc(userId).stream().map(this::banResponse).toList(),
-                auditService.recentForUser(userId, 10));
+                auditService.recentForUser(userId, 10), deletionMetadata);
     }
 
     @Transactional

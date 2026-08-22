@@ -18,4 +18,8 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID>, JpaSpec
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select user from AppUser user where user.id = :id")
     Optional<AppUser> findByIdForUpdate(@Param("id") UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select user from AppUser user where user.authUserId = :authUserId")
+    Optional<AppUser> findByAuthUserIdForUpdate(@Param("authUserId") UUID authUserId);
 }

@@ -5,5 +5,6 @@ public enum AccountStatus {
     PENDING_VERIFICATION,
     SUSPENDED,
     DISABLED,
-    BANNED
+    BANNED,
+    DELETED
 }

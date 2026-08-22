@@ -55,6 +55,18 @@ public class AppUser {
     @Column(name = "profile_image_updated_at")
     private OffsetDateTime profileImageUpdatedAt;
 
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
+
+    @Column(name = "deleted_by_user_id")
+    private UUID deletedByUserId;
+
+    @Column(name = "deletion_reason")
+    private String deletionReason;
+
+    @Column(name = "deletion_source", length = 50)
+    private String deletionSource;
+
     protected AppUser() {
     }
 
@@ -107,6 +119,20 @@ public class AppUser {
         this.profileImageUpdatedAt = null;
     }
 
+    public void delete(String anonymizedFirstName, String anonymizedLastName, UUID deletedByUserId, String deletionReason, String deletionSource) {
+        this.status = AccountStatus.DELETED;
+        this.deletedAt = OffsetDateTime.now(ZoneOffset.UTC);
+        this.deletedByUserId = deletedByUserId;
+        this.deletionReason = deletionReason;
+        this.deletionSource = deletionSource;
+        this.email = "deleted+" + this.id + "@medisync.invalid";
+        this.firstName = anonymizedFirstName;
+        this.lastName = anonymizedLastName;
+        this.phone = null;
+        this.profileImageKey = null;
+        this.profileImageUpdatedAt = null;
+    }
+
     public UUID getId() { return id; }
     public UUID getAuthUserId() { return authUserId; }
     public String getEmail() { return email; }
@@ -119,4 +145,8 @@ public class AppUser {
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
     public String getProfileImageKey() { return profileImageKey; }
     public OffsetDateTime getProfileImageUpdatedAt() { return profileImageUpdatedAt; }
+    public OffsetDateTime getDeletedAt() { return deletedAt; }
+    public UUID getDeletedByUserId() { return deletedByUserId; }
+    public String getDeletionReason() { return deletionReason; }
+    public String getDeletionSource() { return deletionSource; }
 }

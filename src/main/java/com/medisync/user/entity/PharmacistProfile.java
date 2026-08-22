@@ -91,6 +91,11 @@ public class PharmacistProfile {
         this.qualifications = qualifications;
     }
 
+    public void anonymize() {
+        this.pharmacyName = "Deleted Pharmacist";
+        this.pharmacyAddress = null;
+    }
+
     public void submitForVerification() {
         verificationStatus = VerificationStatus.PENDING;
         verificationRejectionReason = null;

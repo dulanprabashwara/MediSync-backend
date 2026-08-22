@@ -31,4 +31,20 @@ public interface PrescriptionRepository extends JpaRepository<Prescription, UUID
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select prescription from Prescription prescription where prescription.id = :id")
     Optional<Prescription> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("""
+            select count(p) > 0 from Prescription p
+            where p.patientId = :patientId
+            and p.status = com.medisync.prescription.entity.PrescriptionStatus.ISSUED
+            and not exists (select 1 from PrescriptionDispensation pd where pd.prescriptionId = p.id)
+            """)
+    boolean hasActivePrescriptionsForPatient(@Param("patientId") UUID patientId);
+
+    @Query("""
+            select count(p) > 0 from Prescription p
+            where p.doctorId = :doctorId
+            and p.status in (com.medisync.prescription.entity.PrescriptionStatus.DRAFT, com.medisync.prescription.entity.PrescriptionStatus.ISSUED)
+            and not exists (select 1 from PrescriptionDispensation pd where pd.prescriptionId = p.id)
+            """)
+    boolean hasActivePrescriptionsForDoctor(@Param("doctorId") UUID doctorId);
 }

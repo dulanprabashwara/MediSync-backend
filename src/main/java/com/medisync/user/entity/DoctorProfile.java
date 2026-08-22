@@ -107,6 +107,10 @@ public class DoctorProfile {
         this.bio = bio;
     }
 
+    public void anonymize() {
+        this.bio = null;
+    }
+
     public void submitForVerification() {
         this.verificationStatus = VerificationStatus.PENDING;
         this.verificationRejectionReason = null;

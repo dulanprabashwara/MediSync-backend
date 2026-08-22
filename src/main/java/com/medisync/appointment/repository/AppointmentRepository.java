@@ -36,4 +36,30 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
     boolean existsActivePatientOverlap(@Param("patientId") UUID patientId,
                                        @Param("startsAt") OffsetDateTime startsAt,
                                        @Param("endsAt") OffsetDateTime endsAt);
+
+    @Query("""
+            select count(a) > 0 from Appointment a
+            where a.patientId = :patientId
+            and (
+                a.status = com.medisync.appointment.entity.AppointmentStatus.REQUESTED
+                or (a.status = com.medisync.appointment.entity.AppointmentStatus.CONFIRMED and not exists (
+                    select 1 from ConsultationSession c
+                    where c.appointmentId = a.id and c.status in (com.medisync.consultation.entity.ConsultationStatus.COMPLETED, com.medisync.consultation.entity.ConsultationStatus.CANCELLED)
+                ))
+            )
+            """)
+    boolean hasActiveWorkflowsForPatient(@Param("patientId") UUID patientId);
+
+    @Query("""
+            select count(a) > 0 from Appointment a
+            where a.doctorId = :doctorId
+            and (
+                a.status = com.medisync.appointment.entity.AppointmentStatus.REQUESTED
+                or (a.status = com.medisync.appointment.entity.AppointmentStatus.CONFIRMED and not exists (
+                    select 1 from ConsultationSession c
+                    where c.appointmentId = a.id and c.status in (com.medisync.consultation.entity.ConsultationStatus.COMPLETED, com.medisync.consultation.entity.ConsultationStatus.CANCELLED)
+                ))
+            )
+            """)
+    boolean hasActiveWorkflowsForDoctor(@Param("doctorId") UUID doctorId);
 }
