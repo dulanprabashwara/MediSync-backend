@@ -5,6 +5,8 @@ import com.medisync.pharmacy.dto.DispensingStatus;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import java.math.BigDecimal;
+import com.medisync.prescription.entity.DoctorFeeStatus;
 
 public record PatientPrescriptionSummary(
         UUID id,
@@ -17,6 +19,9 @@ public record PatientPrescriptionSummary(
         PrescriptionStatus status,
         boolean expired,
         DispensingStatus dispensingStatus,
+        BigDecimal doctorFeeAmount,
+        String doctorFeeCurrency,
+        DoctorFeeStatus doctorFeeStatus,
         OffsetDateTime dispensedAt,
         String dispensingPharmacy,
         long medicineCount

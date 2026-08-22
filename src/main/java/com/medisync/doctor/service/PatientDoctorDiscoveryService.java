@@ -22,6 +22,8 @@ import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.repository.AppUserRepository;
 import com.medisync.user.repository.DoctorProfileRepository;
 import com.medisync.user.service.CurrentUserService;
+import com.medisync.media.MediaUrlService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -51,7 +53,9 @@ public class PatientDoctorDiscoveryService {
     private final AppointmentSlotRepository slotRepository;
     private final AppointmentProperties appointmentProperties;
     private final Clock clock;
+    private final MediaUrlService mediaUrlService;
 
+    @Autowired
     public PatientDoctorDiscoveryService(CurrentUserService currentUserService,
                                          DoctorProfileRepository doctorProfileRepository,
                                          AppUserRepository appUserRepository,
@@ -60,7 +64,8 @@ public class PatientDoctorDiscoveryService {
                                          SpecializationRepository specializationRepository,
                                          AppointmentSlotRepository slotRepository,
                                          AppointmentProperties appointmentProperties,
-                                         Clock clock) {
+                                         Clock clock,
+                                         MediaUrlService mediaUrlService) {
         this.currentUserService = currentUserService;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appUserRepository = appUserRepository;
@@ -70,6 +75,20 @@ public class PatientDoctorDiscoveryService {
         this.slotRepository = slotRepository;
         this.appointmentProperties = appointmentProperties;
         this.clock = clock;
+        this.mediaUrlService = mediaUrlService;
+    }
+
+    PatientDoctorDiscoveryService(CurrentUserService currentUserService,
+                                  DoctorProfileRepository doctorProfileRepository,
+                                  AppUserRepository appUserRepository,
+                                  HospitalRepository hospitalRepository,
+                                  DepartmentRepository departmentRepository,
+                                  SpecializationRepository specializationRepository,
+                                  AppointmentSlotRepository slotRepository,
+                                  AppointmentProperties appointmentProperties,
+                                  Clock clock) {
+        this(currentUserService, doctorProfileRepository, appUserRepository, hospitalRepository,
+                departmentRepository, specializationRepository, slotRepository, appointmentProperties, clock, null);
     }
 
     @Transactional(readOnly = true)
@@ -154,7 +173,8 @@ public class PatientDoctorDiscoveryService {
         String summary = bio == null || bio.length() <= 240 ? bio : bio.substring(0, 237) + "...";
         return new DoctorSummaryResponse(doctor.getId(), displayName(user), hospital.getId(), hospital.getName(),
                 department.getId(), department.getName(), specialization.getId(), specialization.getName(),
-                doctor.getQualifications(), doctor.getYearsOfExperience(), summary, true);
+                doctor.getQualifications(), doctor.getYearsOfExperience(), summary,
+                mediaUrlService == null ? null : mediaUrlService.signedUrlOrNull(user.getProfileImageKey()), true);
     }
 
     private DoctorDetailsResponse toDetails(DoctorProfile doctor) {
@@ -164,7 +184,8 @@ public class PatientDoctorDiscoveryService {
         Specialization specialization = requireSpecialization(doctor);
         return new DoctorDetailsResponse(doctor.getId(), displayName(user), hospital.getId(), hospital.getName(),
                 department.getId(), department.getName(), specialization.getId(), specialization.getName(),
-                doctor.getQualifications(), doctor.getYearsOfExperience(), doctor.getBio(), true);
+                doctor.getQualifications(), doctor.getYearsOfExperience(), doctor.getBio(),
+                mediaUrlService == null ? null : mediaUrlService.signedUrlOrNull(user.getProfileImageKey()), true);
     }
 
     private AppUser requireUser(DoctorProfile doctor) {

@@ -32,6 +32,14 @@ import java.time.OffsetDateTime;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
+import java.math.BigDecimal;
+import java.util.Map;
+import com.medisync.audit.AuditActions;
+import com.medisync.audit.service.AuditService;
+import com.medisync.config.PrescriptionPaymentProperties;
+import com.medisync.user.service.CurrentUserService;
+import com.medisync.user.entity.AppUser;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class PrescriptionService {
@@ -49,7 +57,11 @@ public class PrescriptionService {
     private final PrescriptionQrTokenGenerator tokenGenerator;
     private final PrescriptionQrTokenHasher tokenHasher;
     private final Clock clock;
+    private final PrescriptionPaymentProperties paymentProperties;
+    private final CurrentUserService currentUserService;
+    private final AuditService auditService;
 
+    @Autowired
     public PrescriptionService(PrescriptionRepository prescriptionRepository,
                                PrescriptionItemRepository itemRepository,
                                PrescriptionQrTokenRepository tokenRepository,
@@ -59,7 +71,10 @@ public class PrescriptionService {
                                PrescriptionResponseMapper mapper,
                                PrescriptionQrTokenGenerator tokenGenerator,
                                PrescriptionQrTokenHasher tokenHasher,
-                               Clock clock) {
+                               Clock clock,
+                               PrescriptionPaymentProperties paymentProperties,
+                               CurrentUserService currentUserService,
+                               AuditService auditService) {
         this.prescriptionRepository = prescriptionRepository;
         this.itemRepository = itemRepository;
         this.tokenRepository = tokenRepository;
@@ -70,6 +85,24 @@ public class PrescriptionService {
         this.tokenGenerator = tokenGenerator;
         this.tokenHasher = tokenHasher;
         this.clock = clock;
+        this.paymentProperties = paymentProperties;
+        this.currentUserService = currentUserService;
+        this.auditService = auditService;
+    }
+
+    PrescriptionService(PrescriptionRepository prescriptionRepository,
+                        PrescriptionItemRepository itemRepository,
+                        PrescriptionQrTokenRepository tokenRepository,
+                        PrescriptionDispensationRepository dispensationRepository,
+                        PrescriptionAccessService accessService,
+                        ConsultationAccessService consultationAccessService,
+                        PrescriptionResponseMapper mapper,
+                        PrescriptionQrTokenGenerator tokenGenerator,
+                        PrescriptionQrTokenHasher tokenHasher,
+                        Clock clock) {
+        this(prescriptionRepository, itemRepository, tokenRepository, dispensationRepository, accessService,
+                consultationAccessService, mapper, tokenGenerator, tokenHasher, clock,
+                new PrescriptionPaymentProperties("LKR"), null, null);
     }
 
     @Transactional(readOnly = true)
@@ -99,11 +132,14 @@ public class PrescriptionService {
     public DoctorPrescriptionResponse createDraft(Jwt jwt, UUID consultationId) {
         var context = consultationAccessService.requireDoctor(jwt, consultationId, true);
         requireDraftWritable(context.consultation().getStatus());
-        Prescription prescription = prescriptionRepository
-                .findByConsultationIdAndStatus(consultationId, PrescriptionStatus.DRAFT)
-                .orElseGet(() -> prescriptionRepository.saveAndFlush(new Prescription(consultationId,
-                        context.doctor().getId(), context.patient().getId())));
+        var existing = prescriptionRepository.findByConsultationIdAndStatus(consultationId, PrescriptionStatus.DRAFT);
+        Prescription prescription = existing.orElseGet(() -> prescriptionRepository.saveAndFlush(
+                new Prescription(consultationId, context.doctor().getId(), context.patient().getId())));
         verifyOwnership(prescription, context.doctor().getId(), context.patient().getId());
+        if (existing.isEmpty()) {
+            audit(jwt, AuditActions.PRESCRIPTION_CREATED, prescription.getId(),
+                    Map.of("prescriptionStatus", "DRAFT"));
+        }
         return mapper.toDoctorResponse(prescription);
     }
 
@@ -113,7 +149,9 @@ public class PrescriptionService {
         var context = consultationAccessService.requireDoctor(jwt, access.prescription().getConsultationId(), true);
         requireDraftWritable(context.consultation().getStatus());
         verifyOwnership(access.prescription(), context.doctor().getId(), context.patient().getId());
-        access.prescription().updateDraft(request.validityDays(), optional(request.generalInstructions()));
+        BigDecimal fee = request.doctorFeeAmount() == null ? BigDecimal.ZERO : request.doctorFeeAmount();
+        access.prescription().updateDraft(request.validityDays(), optional(request.generalInstructions()), fee,
+                paymentProperties.normalizedCurrency());
         prescriptionRepository.saveAndFlush(access.prescription());
         itemRepository.deleteByPrescriptionId(prescriptionId);
         itemRepository.flush();
@@ -121,6 +159,8 @@ public class PrescriptionService {
                 .mapToObj(index -> item(prescriptionId, index + 1, request.items().get(index)))
                 .toList();
         itemRepository.saveAllAndFlush(items);
+        audit(jwt, AuditActions.PRESCRIPTION_DRAFT_SAVED, prescriptionId,
+                Map.of("feeRequired", fee.signum() > 0, "prescriptionStatus", "DRAFT"));
         return mapper.toDoctorResponse(access.prescription());
     }
 
@@ -140,6 +180,9 @@ public class PrescriptionService {
         OffsetDateTime now = OffsetDateTime.now(clock);
         access.prescription().issue(now);
         prescriptionRepository.saveAndFlush(access.prescription());
+        audit(jwt, AuditActions.PRESCRIPTION_ISSUED, prescriptionId,
+                Map.of("paymentStatus", access.prescription().getDoctorFeeStatus().name(),
+                        "feeRequired", access.prescription().getDoctorFeeAmount().signum() > 0));
         log.info("Prescription {} issued", prescriptionId);
         return mapper.toDoctorResponse(access.prescription());
     }
@@ -161,6 +204,8 @@ public class PrescriptionService {
         }
         access.prescription().cancel(normalizedReason, now);
         prescriptionRepository.saveAndFlush(access.prescription());
+        audit(jwt, AuditActions.PRESCRIPTION_CANCELLED, prescriptionId,
+                Map.of("reasonProvided", true, "prescriptionStatus", "CANCELLED"));
         lockedToken.or(() -> tokenRepository.findByPrescriptionId(prescriptionId)).ifPresent(token -> {
             token.revoke(now);
             tokenRepository.saveAndFlush(token);
@@ -196,6 +241,10 @@ public class PrescriptionService {
         if (dispensationRepository.existsByPrescriptionId(prescriptionId)) {
             throw new ResourceConflictException("This prescription has already been dispensed");
         }
+        if (!prescription.isQrPaymentEligible()) {
+            throw new ResourceConflictException(
+                    "The doctor must confirm the consultation fee before the prescription QR can be generated");
+        }
 
         String rawToken = uniqueTokenHash();
         String tokenHash = tokenHasher.hash(rawToken);
@@ -204,7 +253,35 @@ public class PrescriptionService {
                         prescription.getValidUntil()));
         token.rotate(tokenHash, now, prescription.getValidUntil());
         tokenRepository.saveAndFlush(token);
+        audit(jwt, AuditActions.QR_TOKEN_CREATED, prescriptionId,
+                Map.of("paymentStatus", prescription.getDoctorFeeStatus().name()));
         return new PrescriptionQrResponse(tokenGenerator.payload(rawToken), prescription.getValidUntil());
+    }
+
+    @Transactional
+    public DoctorPrescriptionResponse confirmDoctorFee(Jwt jwt, UUID prescriptionId) {
+        AppUser doctorUser = currentUserService.requireCurrentUser(jwt);
+        var access = accessService.requireDoctorPrescription(jwt, prescriptionId, true);
+        var context = consultationAccessService.requireDoctor(jwt, access.prescription().getConsultationId(), true);
+        verifyOwnership(access.prescription(), context.doctor().getId(), context.patient().getId());
+        if (context.consultation().getStatus() != ConsultationStatus.IN_PROGRESS
+                && context.consultation().getStatus() != ConsultationStatus.COMPLETED) {
+            throw new ResourceConflictException(
+                    "Payment can only be confirmed for an in-progress or completed consultation");
+        }
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (access.prescription().getValidUntil() == null
+                || !now.isBefore(access.prescription().getValidUntil())) {
+            throw new ResourceConflictException("Payment cannot be confirmed for an expired prescription");
+        }
+        if (dispensationRepository.existsByPrescriptionId(prescriptionId)) {
+            throw new ResourceConflictException("Payment cannot be confirmed for a dispensed prescription");
+        }
+        access.prescription().confirmDoctorFee(doctorUser.getId(), now);
+        prescriptionRepository.saveAndFlush(access.prescription());
+        auditService.record(doctorUser, AuditActions.DOCTOR_FEE_CONFIRMED, "PRESCRIPTION", prescriptionId,
+                Map.of("paymentStatus", access.prescription().getDoctorFeeStatus().name(), "feeRequired", true));
+        return mapper.toDoctorResponse(access.prescription());
     }
 
     @Transactional
@@ -270,5 +347,12 @@ public class PrescriptionService {
     private String optional(String value) {
         if (value == null || value.isBlank()) return null;
         return value.trim();
+    }
+
+    private void audit(Jwt jwt, String action, UUID prescriptionId, Map<String, ?> metadata) {
+        if (auditService != null && currentUserService != null) {
+            auditService.record(currentUserService.requireCurrentUser(jwt), action,
+                    "PRESCRIPTION", prescriptionId, metadata);
+        }
     }
 }

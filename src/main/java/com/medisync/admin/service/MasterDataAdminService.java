@@ -16,7 +16,9 @@ import com.medisync.specialization.entity.Specialization;
 import com.medisync.specialization.repository.SpecializationRepository;
 import com.medisync.user.entity.AccountStatus;
 import com.medisync.user.entity.UserRole;
+import com.medisync.user.repository.DoctorProfileRepository;
 import com.medisync.user.service.CurrentUserService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,23 +36,34 @@ public class MasterDataAdminService {
     private final HospitalRepository hospitalRepository;
     private final DepartmentRepository departmentRepository;
     private final SpecializationRepository specializationRepository;
+    private final DoctorProfileRepository doctorProfileRepository;
 
+    @Autowired
     public MasterDataAdminService(
             CurrentUserService currentUserService,
             HospitalRepository hospitalRepository,
             DepartmentRepository departmentRepository,
-            SpecializationRepository specializationRepository
+            SpecializationRepository specializationRepository,
+            DoctorProfileRepository doctorProfileRepository
     ) {
         this.currentUserService = currentUserService;
         this.hospitalRepository = hospitalRepository;
         this.departmentRepository = departmentRepository;
         this.specializationRepository = specializationRepository;
+        this.doctorProfileRepository = doctorProfileRepository;
+    }
+
+    MasterDataAdminService(CurrentUserService currentUserService, HospitalRepository hospitalRepository,
+                           DepartmentRepository departmentRepository,
+                           SpecializationRepository specializationRepository) {
+        this(currentUserService, hospitalRepository, departmentRepository, specializationRepository, null);
     }
 
     @Transactional(readOnly = true)
     public List<HospitalResponse> hospitals(Jwt jwt) {
         requireAdmin(jwt);
-        return hospitalRepository.findAllByOrderByNameAsc().stream().map(HospitalResponse::from).toList();
+        return hospitalRepository.findAllByOrderByNameAsc().stream()
+                .map(hospital -> HospitalResponse.from(hospital, doctorCountByHospital(hospital.getId()))).toList();
     }
 
     @Transactional
@@ -62,7 +75,7 @@ public class MasterDataAdminService {
         }
         Hospital hospital = new Hospital(name, optional(request.addressLine()), optional(request.city()),
                 optional(request.phone()), request.active() == null || request.active());
-        return HospitalResponse.from(hospitalRepository.saveAndFlush(hospital));
+        return HospitalResponse.from(hospitalRepository.saveAndFlush(hospital), 0);
     }
 
     @Transactional
@@ -76,7 +89,7 @@ public class MasterDataAdminService {
         }
         hospital.update(name, optional(request.addressLine()), optional(request.city()), optional(request.phone()),
                 request.active() == null ? hospital.isActive() : request.active());
-        return HospitalResponse.from(hospitalRepository.saveAndFlush(hospital));
+        return HospitalResponse.from(hospitalRepository.saveAndFlush(hospital), doctorCountByHospital(id));
     }
 
     @Transactional(readOnly = true)
@@ -88,7 +101,7 @@ public class MasterDataAdminService {
                 .map(department -> DepartmentResponse.from(department,
                         hospitals.containsKey(department.getHospitalId())
                                 ? hospitals.get(department.getHospitalId()).getName()
-                                : "Unknown hospital"))
+                                : "Unknown hospital", doctorCountByDepartment(department.getId())))
                 .toList();
     }
 
@@ -102,7 +115,7 @@ public class MasterDataAdminService {
         }
         Department department = new Department(hospital.getId(), name,
                 request.active() == null || request.active());
-        return DepartmentResponse.from(departmentRepository.saveAndFlush(department), hospital.getName());
+        return DepartmentResponse.from(departmentRepository.saveAndFlush(department), hospital.getName(), 0);
     }
 
     @Transactional
@@ -117,14 +130,16 @@ public class MasterDataAdminService {
         }
         department.update(hospital.getId(), name,
                 request.active() == null ? department.isActive() : request.active());
-        return DepartmentResponse.from(departmentRepository.saveAndFlush(department), hospital.getName());
+        return DepartmentResponse.from(departmentRepository.saveAndFlush(department), hospital.getName(),
+                doctorCountByDepartment(id));
     }
 
     @Transactional(readOnly = true)
     public List<SpecializationResponse> specializations(Jwt jwt) {
         requireAdmin(jwt);
         return specializationRepository.findAllByOrderByNameAsc().stream()
-                .map(SpecializationResponse::from)
+                .map(specialization -> SpecializationResponse.from(specialization,
+                        doctorCountBySpecialization(specialization.getId())))
                 .toList();
     }
 
@@ -137,7 +152,7 @@ public class MasterDataAdminService {
         }
         Specialization specialization = new Specialization(name, optional(request.description()),
                 request.active() == null || request.active());
-        return SpecializationResponse.from(specializationRepository.saveAndFlush(specialization));
+        return SpecializationResponse.from(specializationRepository.saveAndFlush(specialization), 0);
     }
 
     @Transactional
@@ -151,7 +166,8 @@ public class MasterDataAdminService {
         }
         specialization.update(name, optional(request.description()),
                 request.active() == null ? specialization.isActive() : request.active());
-        return SpecializationResponse.from(specializationRepository.saveAndFlush(specialization));
+        return SpecializationResponse.from(specializationRepository.saveAndFlush(specialization),
+                doctorCountBySpecialization(id));
     }
 
     private void requireAdmin(Jwt jwt) {
@@ -166,5 +182,16 @@ public class MasterDataAdminService {
     private String optional(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
-}
 
+    private long doctorCountByHospital(UUID id) {
+        return doctorProfileRepository == null ? 0 : doctorProfileRepository.countByHospitalId(id);
+    }
+
+    private long doctorCountByDepartment(UUID id) {
+        return doctorProfileRepository == null ? 0 : doctorProfileRepository.countByDepartmentId(id);
+    }
+
+    private long doctorCountBySpecialization(UUID id) {
+        return doctorProfileRepository == null ? 0 : doctorProfileRepository.countBySpecializationId(id);
+    }
+}

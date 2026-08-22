@@ -31,6 +31,14 @@ medisync:
     frontend-url: ${FRONTEND_URL:http://localhost:3000}
   appointments:
     minimum-lead-minutes: ${APPOINTMENT_MIN_LEAD_MINUTES:0}
+  media:
+    service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+    bucket: ${SUPABASE_STORAGE_BUCKET:medisync-private-media}
+    signed-url-seconds: ${MEDIA_SIGNED_URL_SECONDS:300}
+    max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:5242880}
+  prescriptions:
+    payment:
+      currency: ${DOCTOR_FEE_CURRENCY:LKR}
 
 logging:
   level:

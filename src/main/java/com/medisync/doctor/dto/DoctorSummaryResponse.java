@@ -14,6 +14,7 @@ public record DoctorSummaryResponse(
         String qualifications,
         Integer yearsOfExperience,
         String bioSummary,
+        String profileImageUrl,
         boolean verified
 ) {
 }

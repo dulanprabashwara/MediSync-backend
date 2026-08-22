@@ -82,7 +82,9 @@ public class PrescriptionResponseMapper {
                 "Dr. " + fullName(data.doctorUser()),
                 data.doctor().getMedicalRegistrationNumber(), data.hospital().getName(), data.department().getName(),
                 data.specialization().getName(), data.appointment().getScheduledStart(), prescription.getValidityDays(),
-                visibleGeneralInstructions(prescription), items, prescription.getIssuedAt(), prescription.getValidUntil(),
+                visibleGeneralInstructions(prescription), prescription.getDoctorFeeAmount(),
+                prescription.getDoctorFeeCurrency(), prescription.getDoctorFeeStatus(),
+                prescription.getDoctorFeeConfirmedAt(), items, prescription.getIssuedAt(), prescription.getValidUntil(),
                 expired(prescription), dispensing.status(), dispensing.dispensedAt(), dispensing.pharmacyName(),
                 prescription.getCancelledAt(), prescription.getCancellationReason(),
                 prescription.getCreatedAt(), prescription.getUpdatedAt());
@@ -94,7 +96,9 @@ public class PrescriptionResponseMapper {
         return new PatientPrescriptionSummary(prescription.getId(), prescription.getConsultationId(),
                 "Dr. " + fullName(data.doctorUser()), data.specialization().getName(), data.hospital().getName(),
                 prescription.getIssuedAt(), prescription.getValidUntil(), prescription.getStatus(),
-                expired(prescription), dispensing.status(), dispensing.dispensedAt(), dispensing.pharmacyName(),
+                expired(prescription), dispensing.status(), prescription.getDoctorFeeAmount(),
+                prescription.getDoctorFeeCurrency(), prescription.getDoctorFeeStatus(),
+                dispensing.dispensedAt(), dispensing.pharmacyName(),
                 prescription.getStatus() == PrescriptionStatus.CANCELLED
                         ? 0 : itemRepository.countByPrescriptionId(prescription.getId()));
     }
@@ -104,13 +108,16 @@ public class PrescriptionResponseMapper {
         boolean expired = expired(prescription);
         DispensingData dispensing = dispensingData(prescription);
         boolean generationAllowed = prescription.getStatus() == PrescriptionStatus.ISSUED && !expired
+                && prescription.isQrPaymentEligible()
                 && dispensing.status() == DispensingStatus.NOT_DISPENSED;
         return new PatientPrescriptionDetail(prescription.getId(), prescription.getConsultationId(),
                 fullName(data.patientUser()), "Dr. " + fullName(data.doctorUser()),
                 data.doctor().getMedicalRegistrationNumber(), data.hospital().getName(), data.department().getName(),
                 data.specialization().getName(), data.appointment().getScheduledStart(), prescription.getIssuedAt(),
                 prescription.getValidUntil(), prescription.getStatus(), expired,
-                dispensing.status(), dispensing.dispensedAt(), dispensing.pharmacyName(),
+                dispensing.status(), prescription.getDoctorFeeAmount(), prescription.getDoctorFeeCurrency(),
+                prescription.getDoctorFeeStatus(), prescription.getDoctorFeeConfirmedAt(),
+                dispensing.dispensedAt(), dispensing.pharmacyName(),
                 visibleGeneralInstructions(prescription), visibleItems(prescription),
                 prescription.getCancellationReason(), prescription.getCancelledAt(), generationAllowed);
     }

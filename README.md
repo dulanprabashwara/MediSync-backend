@@ -186,3 +186,38 @@ Unit and MVC security tests do not require the production database. Running the 
 
 Use `docs/phase-2b-manual-verification.md` for the Phase 2 booking regression checklist and `docs/phase-3-manual-verification.md` for consultation lifecycle, live chat, ownership, clinical-note privacy, and post-completion checks.
 Use `docs/phase-5-manual-verification.md` for pharmacist verification, QR scanning, dispensing, single-use protection, derived status, and final core regression.
+# Final expansion (Flyway V9)
+
+V9 adds full administrator user management, append-only audit events, private profile/chat media metadata,
+and manual doctor-fee confirmation before patient prescription QR generation. V1–V8 remain immutable.
+
+## Private Supabase media setup
+
+MediSync never exposes the Supabase service-role key to the browser. Before enabling image uploads:
+
+1. In Supabase Storage, create a bucket named `medisync-private-media` and leave **Public bucket** disabled.
+2. Restrict the bucket to `image/jpeg`, `image/png`, and `image/webp`, with a 5 MB file-size limit.
+3. Set `SUPABASE_SERVICE_ROLE_KEY` only in the backend process environment. This must be the Supabase
+   `service_role` secret, not the publishable/anon key.
+4. Set `SUPABASE_STORAGE_BUCKET=medisync-private-media`. Signed URLs default to five minutes and can be adjusted
+   with `MEDIA_SIGNED_URL_SECONDS`.
+
+The backend validates both declared MIME type and file magic bytes, generates random storage paths,
+and returns short-lived signed URLs only to authorized users. A missing service-role key leaves all
+non-media functionality available and makes upload requests return `MEDIA_STORAGE_UNAVAILABLE`.
+
+## V9 administration APIs
+
+- `GET /api/admin/users` and `GET /api/admin/doctors` provide bounded, filterable pages.
+- `GET /api/admin/users/{id}`, `POST .../ban`, and `POST .../unban` manage account access with history.
+- `GET /api/admin/audit-logs` provides filtered, paginated, append-only operational events.
+- `GET /api/admin/analytics/summary`, `/timeseries`, and `/user-activity` use database aggregation.
+
+## Manual doctor fee workflow
+
+A doctor may set a non-negative fee while a prescription is a draft. Issuing a positive-fee prescription
+sets it to `AWAITING_CONFIRMATION`; only the assigned active verified doctor may call
+`POST /api/doctor/prescriptions/{id}/confirm-payment` during an in-progress or completed consultation.
+Expired, cancelled, or dispensed prescriptions cannot be confirmed. Patient QR creation remains blocked until
+confirmation. Zero-fee and pre-V9 prescriptions use
+`NOT_REQUIRED` for backward compatibility.

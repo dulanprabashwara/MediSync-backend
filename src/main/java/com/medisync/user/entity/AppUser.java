@@ -49,6 +49,12 @@ public class AppUser {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
+    @Column(name = "profile_image_key", length = 500)
+    private String profileImageKey;
+
+    @Column(name = "profile_image_updated_at")
+    private OffsetDateTime profileImageUpdatedAt;
+
     protected AppUser() {
     }
 
@@ -80,6 +86,27 @@ public class AppUser {
         this.status = AccountStatus.ACTIVE;
     }
 
+    public void ban() {
+        this.status = AccountStatus.BANNED;
+    }
+
+    public void restoreStatus(AccountStatus previousStatus) {
+        if (previousStatus == null || previousStatus == AccountStatus.BANNED) {
+            throw new IllegalArgumentException("A valid pre-ban account status is required");
+        }
+        this.status = previousStatus;
+    }
+
+    public void replaceProfileImage(String storageKey, OffsetDateTime updatedAt) {
+        this.profileImageKey = storageKey;
+        this.profileImageUpdatedAt = updatedAt;
+    }
+
+    public void removeProfileImage() {
+        this.profileImageKey = null;
+        this.profileImageUpdatedAt = null;
+    }
+
     public UUID getId() { return id; }
     public UUID getAuthUserId() { return authUserId; }
     public String getEmail() { return email; }
@@ -88,4 +115,8 @@ public class AppUser {
     public String getPhone() { return phone; }
     public UserRole getRole() { return role; }
     public AccountStatus getStatus() { return status; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
+    public String getProfileImageKey() { return profileImageKey; }
+    public OffsetDateTime getProfileImageUpdatedAt() { return profileImageUpdatedAt; }
 }

@@ -41,6 +41,12 @@ public class DoctorPrescriptionController {
         return service.issue(jwt, prescriptionId);
     }
 
+    @PostMapping("/{prescriptionId}/confirm-payment")
+    public DoctorPrescriptionResponse confirmPayment(@AuthenticationPrincipal Jwt jwt,
+                                                      @PathVariable UUID prescriptionId) {
+        return service.confirmDoctorFee(jwt, prescriptionId);
+    }
+
     @PostMapping("/{prescriptionId}/cancel")
     public DoctorPrescriptionResponse cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID prescriptionId,
             @Valid @RequestBody CancelPrescriptionRequest request) {

@@ -6,6 +6,8 @@ import com.medisync.consultation.dto.SendMessageRequest;
 import com.medisync.consultation.entity.ConsultationMessage;
 import com.medisync.consultation.entity.ConsultationSession;
 import com.medisync.consultation.repository.ConsultationMessageRepository;
+import com.medisync.consultation.repository.ConsultationMessageAttachmentRepository;
+import com.medisync.audit.service.AuditService;
 import com.medisync.exception.InvalidRequestException;
 import com.medisync.exception.ResourceConflictException;
 import com.medisync.user.entity.AccountStatus;
@@ -13,12 +15,17 @@ import com.medisync.user.entity.AppUser;
 import com.medisync.user.entity.DoctorProfile;
 import com.medisync.user.entity.PatientProfile;
 import com.medisync.user.entity.UserRole;
+import com.medisync.media.ImageUploadValidator;
+import com.medisync.media.MediaStorageService;
+import com.medisync.media.MediaUrlService;
+import com.medisync.media.ValidatedImage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -27,6 +34,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.InOrder;
@@ -37,6 +45,11 @@ class ConsultationChatServiceTest {
     @Mock ConsultationAccessService accessService;
     @Mock ConsultationMessageRepository messageRepository;
     @Mock ConsultationRealtimePublisher realtimePublisher;
+    @Mock ConsultationMessageAttachmentRepository attachmentRepository;
+    @Mock ImageUploadValidator imageValidator;
+    @Mock MediaStorageService storageService;
+    @Mock MediaUrlService mediaUrlService;
+    @Mock AuditService auditService;
 
     private ConsultationChatService service;
     private Jwt jwt;
@@ -44,7 +57,8 @@ class ConsultationChatServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ConsultationChatService(accessService, messageRepository, realtimePublisher);
+        service = new ConsultationChatService(accessService, messageRepository, realtimePublisher,
+                attachmentRepository, imageValidator, storageService, mediaUrlService, auditService);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(UUID.randomUUID().toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
         context = scheduledContext();
@@ -105,6 +119,46 @@ class ConsultationChatServiceTest {
 
         assertThatThrownBy(() -> service.sendPatientMessage(jwt, context.consultation().getId(),
                 new SendMessageRequest("Hello"))).isInstanceOf(ResourceConflictException.class);
+    }
+
+    @Test
+    void completedConsultationAllowsPrivateImageOnlyMessage() {
+        context.consultation().start();
+        context.consultation().complete();
+        when(accessService.requirePatient(jwt, context.consultation().getId(), true)).thenReturn(context);
+        when(messageRepository.save(any(ConsultationMessage.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        byte[] bytes = new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff, 0x01};
+        MockMultipartFile upload = new MockMultipartFile("images", "receipt.jpg", "image/jpeg", bytes);
+        when(imageValidator.validate(upload)).thenReturn(
+                new ValidatedImage(bytes, "image/jpeg", "jpg", "receipt.jpg"));
+        when(mediaUrlService.signedUrlOrNull(any())).thenAnswer(invocation ->
+                invocation.getArgument(0) == null ? null : "https://signed.example/private");
+
+        var response = service.sendPatientMedia(jwt, context.consultation().getId(), "", java.util.List.of(upload));
+
+        assertThat(response.content()).isNull();
+        assertThat(response.attachments()).hasSize(1);
+        assertThat(response.attachments().get(0).signedUrl()).startsWith("https://signed.example/");
+        verify(storageService).upload(anyString(), any(ValidatedImage.class));
+        verify(attachmentRepository).saveAllAndFlush(any());
+        verify(auditService).record(org.mockito.Mockito.eq(context.patientUser()),
+                org.mockito.Mockito.eq(com.medisync.audit.AuditActions.CHAT_IMAGES_SENT),
+                org.mockito.Mockito.eq("CONSULTATION"), org.mockito.Mockito.eq(context.consultation().getId()), any());
+    }
+
+    @Test
+    void cancelledConsultationBlocksImageBeforeStorage() {
+        context.consultation().cancel();
+        when(accessService.requireDoctor(jwt, context.consultation().getId(), true)).thenReturn(context);
+        org.mockito.Mockito.doThrow(new ResourceConflictException("read-only"))
+                .when(accessService).requireChatWritable(context);
+        MockMultipartFile upload = new MockMultipartFile("images", "image.png", "image/png",
+                new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47});
+
+        assertThatThrownBy(() -> service.sendDoctorMedia(jwt, context.consultation().getId(), null,
+                java.util.List.of(upload))).isInstanceOf(ResourceConflictException.class);
+        verify(storageService, org.mockito.Mockito.never()).upload(anyString(), any());
     }
 
     private ConsultationAccessService.ConsultationContext scheduledContext() {

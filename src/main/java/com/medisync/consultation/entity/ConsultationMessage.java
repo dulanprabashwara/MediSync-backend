@@ -23,7 +23,7 @@ public class ConsultationMessage {
     @Column(name = "sender_user_id", nullable = false)
     private UUID senderUserId;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
+    @Column(columnDefinition = "TEXT")
     private String content;
 
     @Column(name = "sent_at", nullable = false)

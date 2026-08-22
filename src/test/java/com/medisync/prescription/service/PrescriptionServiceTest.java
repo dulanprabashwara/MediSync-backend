@@ -4,12 +4,15 @@ import com.medisync.appointment.entity.Appointment;
 import com.medisync.consultation.entity.ConsultationSession;
 import com.medisync.consultation.entity.ConsultationStatus;
 import com.medisync.consultation.service.ConsultationAccessService;
+import com.medisync.audit.service.AuditService;
+import com.medisync.config.PrescriptionPaymentProperties;
 import com.medisync.exception.ResourceConflictException;
 import com.medisync.pharmacy.repository.PrescriptionDispensationRepository;
 import com.medisync.prescription.dto.PrescriptionDraftRequest;
 import com.medisync.prescription.dto.PrescriptionItemRequest;
 import com.medisync.prescription.entity.Prescription;
 import com.medisync.prescription.entity.PrescriptionQrToken;
+import com.medisync.prescription.entity.DoctorFeeStatus;
 import com.medisync.prescription.entity.PrescriptionStatus;
 import com.medisync.prescription.repository.PrescriptionItemRepository;
 import com.medisync.prescription.repository.PrescriptionQrTokenRepository;
@@ -19,6 +22,7 @@ import com.medisync.user.entity.AppUser;
 import com.medisync.user.entity.DoctorProfile;
 import com.medisync.user.entity.PatientProfile;
 import com.medisync.user.entity.UserRole;
+import com.medisync.user.service.CurrentUserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.Clock;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -53,6 +58,8 @@ class PrescriptionServiceTest {
     @Mock ConsultationAccessService consultationAccessService;
     @Mock PrescriptionResponseMapper mapper;
     @Mock PrescriptionQrTokenGenerator tokenGenerator;
+    @Mock CurrentUserService currentUserService;
+    @Mock AuditService auditService;
 
     private final PrescriptionQrTokenHasher tokenHasher = new PrescriptionQrTokenHasher();
     private final OffsetDateTime now = OffsetDateTime.parse("2026-08-21T08:00:00Z");
@@ -62,9 +69,9 @@ class PrescriptionServiceTest {
     @BeforeEach
     void setUp() {
         service = new PrescriptionService(prescriptionRepository, itemRepository, tokenRepository,
-                dispensationRepository, accessService,
-                consultationAccessService, mapper, tokenGenerator, tokenHasher,
-                Clock.fixed(now.toInstant(), ZoneId.of("UTC")));
+                dispensationRepository, accessService, consultationAccessService, mapper, tokenGenerator,
+                tokenHasher, Clock.fixed(now.toInstant(), ZoneId.of("UTC")),
+                new PrescriptionPaymentProperties("LKR"), currentUserService, auditService);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(UUID.randomUUID().toString())
                 .issuedAt(now.toInstant()).expiresAt(now.plusMinutes(5).toInstant()).build();
     }
@@ -185,6 +192,54 @@ class PrescriptionServiceTest {
                 .isNotEqualTo(firstHash);
         assertThat(second.qrPayload()).isEqualTo("MEDISYNC:RX:raw-token-B");
         assertThat(stored.get().getTokenHash()).doesNotContain("raw-token");
+    }
+
+    @Test
+    void positiveFeeBlocksQrUntilAssignedDoctorConfirmsAfterCompletion() {
+        var context = context(ConsultationStatus.COMPLETED);
+        Prescription prescription = prescription(context);
+        prescription.updateDraft(30, null, new BigDecimal("1500.00"), "LKR");
+        prescription.issue(now.minusDays(1));
+        when(accessService.requirePatient(jwt)).thenReturn(context.patient());
+        when(accessService.requirePatientPrescription(context.patient(), prescription.getId(), true))
+                .thenReturn(new PrescriptionAccessService.PatientPrescriptionAccess(prescription, context.patient()));
+
+        assertThatThrownBy(() -> service.generatePatientQr(jwt, prescription.getId()))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("confirm");
+
+        allowDoctorPrescription(prescription, context);
+        when(currentUserService.requireCurrentUser(jwt)).thenReturn(context.doctorUser());
+        service.confirmDoctorFee(jwt, prescription.getId());
+
+        assertThat(prescription.getDoctorFeeStatus()).isEqualTo(DoctorFeeStatus.CONFIRMED);
+        assertThat(prescription.isQrPaymentEligible()).isTrue();
+        verify(auditService).record(org.mockito.Mockito.eq(context.doctorUser()),
+                org.mockito.Mockito.eq(com.medisync.audit.AuditActions.DOCTOR_FEE_CONFIRMED),
+                org.mockito.Mockito.eq("PRESCRIPTION"), org.mockito.Mockito.eq(prescription.getId()), any());
+    }
+
+    @Test
+    void expiredOrDispensedPrescriptionCannotHavePaymentConfirmed() {
+        var context = context(ConsultationStatus.COMPLETED);
+        when(currentUserService.requireCurrentUser(jwt)).thenReturn(context.doctorUser());
+
+        Prescription expired = prescription(context);
+        expired.updateDraft(30, null, new BigDecimal("500.00"), "LKR");
+        expired.issue(now.minusDays(31));
+        allowDoctorPrescription(expired, context);
+        assertThatThrownBy(() -> service.confirmDoctorFee(jwt, expired.getId()))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("expired");
+
+        Prescription dispensed = prescription(context);
+        dispensed.updateDraft(30, null, new BigDecimal("500.00"), "LKR");
+        dispensed.issue(now.minusDays(1));
+        allowDoctorPrescription(dispensed, context);
+        when(dispensationRepository.existsByPrescriptionId(dispensed.getId())).thenReturn(true);
+        assertThatThrownBy(() -> service.confirmDoctorFee(jwt, dispensed.getId()))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("dispensed");
     }
 
     @Test

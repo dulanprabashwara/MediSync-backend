@@ -16,6 +16,9 @@ import com.medisync.user.repository.AppUserRepository;
 import com.medisync.user.repository.DoctorProfileRepository;
 import com.medisync.user.repository.PatientProfileRepository;
 import com.medisync.user.repository.PharmacistProfileRepository;
+import com.medisync.user.repository.UserAccountBanRepository;
+import com.medisync.media.MediaUrlService;
+import com.medisync.user.dto.AccountStatusResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -23,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class UserService {
@@ -33,25 +37,51 @@ public class UserService {
     private final PatientProfileRepository patientProfileRepository;
     private final DoctorProfileRepository doctorProfileRepository;
     private final PharmacistProfileRepository pharmacistProfileRepository;
+    private final UserAccountBanRepository banRepository;
+    private final MediaUrlService mediaUrlService;
 
+    @Autowired
     public UserService(
             AppUserRepository appUserRepository,
             PatientProfileRepository patientProfileRepository,
             DoctorProfileRepository doctorProfileRepository,
-            PharmacistProfileRepository pharmacistProfileRepository
+            PharmacistProfileRepository pharmacistProfileRepository,
+            UserAccountBanRepository banRepository,
+            MediaUrlService mediaUrlService
     ) {
         this.appUserRepository = appUserRepository;
         this.patientProfileRepository = patientProfileRepository;
         this.doctorProfileRepository = doctorProfileRepository;
         this.pharmacistProfileRepository = pharmacistProfileRepository;
+        this.banRepository = banRepository;
+        this.mediaUrlService = mediaUrlService;
+    }
+
+    UserService(AppUserRepository appUserRepository,
+                PatientProfileRepository patientProfileRepository,
+                DoctorProfileRepository doctorProfileRepository,
+                PharmacistProfileRepository pharmacistProfileRepository) {
+        this(appUserRepository, patientProfileRepository, doctorProfileRepository, pharmacistProfileRepository,
+                null, null);
     }
 
     @Transactional(readOnly = true)
     public UserResponse getCurrentUser(Jwt jwt) {
         UUID authUserId = authenticatedUserId(jwt);
         return appUserRepository.findByAuthUserId(authUserId)
-                .map(UserResponse::from)
+                .map(user -> UserResponse.from(user, mediaUrlService == null
+                        ? null : mediaUrlService.signedUrlOrNull(user.getProfileImageKey())))
                 .orElseThrow(OnboardingRequiredException::new);
+    }
+
+    @Transactional(readOnly = true)
+    public AccountStatusResponse getAccountStatus(Jwt jwt) {
+        UUID authUserId = authenticatedUserId(jwt);
+        AppUser user = appUserRepository.findByAuthUserId(authUserId)
+                .orElseThrow(OnboardingRequiredException::new);
+        return banRepository.findByUserIdAndUnbannedAtIsNull(user.getId())
+                .map(ban -> new AccountStatusResponse(user.getStatus(), ban.getReason(), ban.getBannedAt()))
+                .orElseGet(() -> new AccountStatusResponse(user.getStatus(), null, null));
     }
 
     @Transactional
@@ -83,7 +113,7 @@ public class UserService {
         createRoleProfile(savedUser);
 
         log.info("User onboarding completed for role {}", savedUser.getRole());
-        return UserResponse.from(savedUser);
+        return UserResponse.from(savedUser, null);
     }
 
     private void createRoleProfile(AppUser user) {

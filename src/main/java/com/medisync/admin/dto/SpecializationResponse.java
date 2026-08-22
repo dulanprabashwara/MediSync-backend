@@ -11,12 +11,16 @@ public record SpecializationResponse(
         String description,
         boolean active,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        long doctorCount
 ) {
     public static SpecializationResponse from(Specialization specialization) {
+        return from(specialization, 0);
+    }
+
+    public static SpecializationResponse from(Specialization specialization, long doctorCount) {
         return new SpecializationResponse(specialization.getId(), specialization.getName(),
                 specialization.getDescription(), specialization.isActive(), specialization.getCreatedAt(),
-                specialization.getUpdatedAt());
+                specialization.getUpdatedAt(), doctorCount);
     }
 }
-

@@ -13,12 +13,32 @@ import org.springframework.data.domain.Pageable;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Collection;
 
 public interface DoctorProfileRepository extends JpaRepository<DoctorProfile, UUID> {
     Optional<DoctorProfile> findByUserId(UUID userId);
     List<DoctorProfile> findByVerificationStatusAndSubmittedForVerificationAtIsNotNullOrderBySubmittedForVerificationAtAsc(
             VerificationStatus verificationStatus);
     boolean existsByMedicalRegistrationNumberIgnoreCaseAndIdNot(String medicalRegistrationNumber, UUID id);
+    long countByHospitalId(UUID hospitalId);
+    long countByDepartmentId(UUID departmentId);
+    long countBySpecializationId(UUID specializationId);
+
+    @Query("select profile.userId from DoctorProfile profile where profile.verificationStatus = :status")
+    Collection<UUID> findUserIdsByVerificationStatus(@Param("status") VerificationStatus status);
+
+    @Query("""
+            select profile.userId from DoctorProfile profile
+            where (:verificationStatus is null or profile.verificationStatus = :verificationStatus)
+              and (:hospitalId is null or profile.hospitalId = :hospitalId)
+              and (:departmentId is null or profile.departmentId = :departmentId)
+              and (:specializationId is null or profile.specializationId = :specializationId)
+            """)
+    Collection<UUID> findUserIdsByAdminFilters(
+            @Param("verificationStatus") VerificationStatus verificationStatus,
+            @Param("hospitalId") UUID hospitalId,
+            @Param("departmentId") UUID departmentId,
+            @Param("specializationId") UUID specializationId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select profile from DoctorProfile profile where profile.userId = :userId")

@@ -4,6 +4,7 @@ import com.medisync.user.exception.DuplicateOnboardingException;
 import com.medisync.user.exception.InvalidAuthenticatedUserException;
 import com.medisync.user.exception.InvalidOnboardingRoleException;
 import com.medisync.user.exception.OnboardingRequiredException;
+import com.medisync.media.MediaStorageUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -105,6 +106,13 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> databaseUnavailable(Exception exception, HttpServletRequest request) {
         log.error("Database operation failed", exception);
         return error(HttpStatus.SERVICE_UNAVAILABLE, "DATABASE_UNAVAILABLE", "MediSync is temporarily unavailable", request);
+    }
+
+    @ExceptionHandler(MediaStorageUnavailableException.class)
+    ResponseEntity<ApiErrorResponse> mediaUnavailable(MediaStorageUnavailableException exception,
+                                                       HttpServletRequest request) {
+        log.warn("Private media operation failed: {}", exception.getMessage());
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "MEDIA_STORAGE_UNAVAILABLE", exception.getMessage(), request);
     }
 
     @ExceptionHandler(Exception.class)

@@ -76,6 +76,19 @@ class ApplicationRoleAuthorizationManagerTest {
         assertThat(decision.isGranted()).isFalse();
     }
 
+    @Test
+    void bannedAccountCannotAccessItsNormalRoleRoute() {
+        UUID authUserId = UUID.randomUUID();
+        JwtAuthenticationToken authentication = authentication(authUserId);
+        when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
+                user(authUserId, UserRole.PATIENT, AccountStatus.BANNED)));
+
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(repository, UserRole.PATIENT)
+                .check(() -> authentication, context);
+
+        assertThat(decision.isGranted()).isFalse();
+    }
+
     private JwtAuthenticationToken authentication(UUID authUserId) {
         Jwt jwt = new Jwt("token", null, null, Map.of("alg", "RS256"), Map.of("sub", authUserId.toString()));
         return new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_AUTHENTICATED")));

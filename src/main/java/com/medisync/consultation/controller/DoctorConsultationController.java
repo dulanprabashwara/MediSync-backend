@@ -23,6 +23,10 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.util.List;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/doctor/consultations")
@@ -52,13 +56,23 @@ public class DoctorConsultationController {
         return chatService.doctorMessages(jwt, consultationId, page, size);
     }
 
-    @PostMapping("/{consultationId}/messages")
+    @PostMapping(value = "/{consultationId}/messages", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public ConsultationMessageResponse sendMessage(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID consultationId,
             @Valid @RequestBody SendMessageRequest request) {
         return chatService.sendDoctorMessage(jwt, consultationId, request);
+    }
+
+    @PostMapping(value = "/{consultationId}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ConsultationMessageResponse sendMediaMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID consultationId,
+            @RequestPart(value = "content", required = false) String content,
+            @RequestPart(value = "images", required = false) List<MultipartFile> images) {
+        return chatService.sendDoctorMedia(jwt, consultationId, content, images);
     }
 
     @PostMapping("/{consultationId}/start")
