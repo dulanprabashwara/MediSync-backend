@@ -37,14 +37,20 @@ public class ConsultationService {
         this.prescriptionRepository = prescriptionRepository;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ConsultationResponse patientDetails(Jwt jwt, UUID consultationId) {
-        return responseMapper.toResponse(accessService.requirePatient(jwt, consultationId, false));
+        ConsultationAccessService.ConsultationContext context =
+                accessService.requirePatient(jwt, consultationId, true);
+        autoStartIfDue(context);
+        return responseMapper.toResponse(context);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ConsultationResponse doctorDetails(Jwt jwt, UUID consultationId) {
-        return responseMapper.toResponse(accessService.requireDoctor(jwt, consultationId, false));
+        ConsultationAccessService.ConsultationContext context =
+                accessService.requireDoctor(jwt, consultationId, true);
+        autoStartIfDue(context);
+        return responseMapper.toResponse(context);
     }
 
     @Transactional
@@ -55,6 +61,16 @@ public class ConsultationService {
         realtimePublisher.publishAfterCommit(context.appointment(),
                 ConsultationEvent.statusChanged(consultationId, context.consultation().getStatus()));
         return responseMapper.toResponse(context);
+    }
+
+    private void autoStartIfDue(ConsultationAccessService.ConsultationContext context) {
+        if (context.consultation().getStatus() != ConsultationStatus.SCHEDULED) return;
+        if (java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)
+                .isBefore(context.appointment().getScheduledStart())) return;
+        context.consultation().start();
+        realtimePublisher.publishAfterCommit(context.appointment(),
+                ConsultationEvent.statusChanged(context.consultation().getId(),
+                        context.consultation().getStatus()));
     }
 
     @Transactional
