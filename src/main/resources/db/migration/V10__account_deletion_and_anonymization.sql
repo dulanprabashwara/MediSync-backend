@@ -7,4 +7,4 @@ ADD COLUMN deletion_reason TEXT,
 ADD COLUMN deletion_source VARCHAR(50);
 
 -- Indexes for performance
-CREATE INDEX idx_app_users_status ON app_users(status);
+CREATE INDEX IF NOT EXISTS idx_app_users_status ON app_users(status);
