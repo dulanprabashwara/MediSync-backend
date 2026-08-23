@@ -16,6 +16,10 @@ public record ConsultationPaymentSummary(
         DoctorFeeStatus doctorPaymentStatus,
         OffsetDateTime paymentConfirmedAt,
         boolean qrGenerationAllowed,
-        DispensingStatus dispensingStatus
+        DispensingStatus dispensingStatus,
+        String doctorBankAccountHolder,
+        String doctorBankName,
+        String doctorBankBranch,
+        String doctorBankAccountNumber
 ) {
 }

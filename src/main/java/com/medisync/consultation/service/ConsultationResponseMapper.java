@@ -113,7 +113,11 @@ public class ConsultationResponseMapper {
                 issued.getDoctorFeeStatus(),
                 issued.getDoctorFeeConfirmedAt(),
                 qrAllowed,
-                dispensingStatus);
+                dispensingStatus,
+                issued.getDoctorBankAccountHolder(),
+                issued.getDoctorBankName(),
+                issued.getDoctorBankBranch(),
+                issued.getDoctorBankAccountNumber());
     }
 
     private String fullName(com.medisync.user.entity.AppUser user) {
