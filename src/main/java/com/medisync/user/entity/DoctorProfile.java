@@ -48,6 +48,18 @@ public class DoctorProfile {
     @Column(length = 2000)
     private String bio;
 
+    @Column(name = "bank_account_holder", length = 200)
+    private String bankAccountHolder;
+
+    @Column(name = "bank_name", length = 100)
+    private String bankName;
+
+    @Column(name = "bank_branch", length = 100)
+    private String bankBranch;
+
+    @Column(name = "bank_account_number", length = 50)
+    private String bankAccountNumber;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "verification_status", nullable = false, length = 32)
     private VerificationStatus verificationStatus;
@@ -107,6 +119,13 @@ public class DoctorProfile {
         this.bio = bio;
     }
 
+    public void updatePaymentDetails(String bankAccountHolder, String bankName, String bankBranch, String bankAccountNumber) {
+        this.bankAccountHolder = bankAccountHolder;
+        this.bankName = bankName;
+        this.bankBranch = bankBranch;
+        this.bankAccountNumber = bankAccountNumber;
+    }
+
     public void anonymize() {
         this.bio = null;
     }
@@ -163,4 +182,8 @@ public class DoctorProfile {
     public OffsetDateTime getSubmittedForVerificationAt() { return submittedForVerificationAt; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
+    public String getBankAccountHolder() { return bankAccountHolder; }
+    public String getBankName() { return bankName; }
+    public String getBankBranch() { return bankBranch; }
+    public String getBankAccountNumber() { return bankAccountNumber; }
 }

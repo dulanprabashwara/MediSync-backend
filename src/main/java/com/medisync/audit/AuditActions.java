@@ -4,6 +4,7 @@ public final class AuditActions {
     public static final String USER_ONBOARDED = "USER_ONBOARDED";
     public static final String USER_BANNED = "USER_BANNED";
     public static final String USER_UNBANNED = "USER_UNBANNED";
+    public static final String USER_UPDATED = "USER_UPDATED";
     public static final String PROFILE_IMAGE_UPDATED = "PROFILE_IMAGE_UPDATED";
     public static final String PROFILE_IMAGE_REMOVED = "PROFILE_IMAGE_REMOVED";
     public static final String CHAT_MESSAGE_SENT = "CHAT_MESSAGE_SENT";

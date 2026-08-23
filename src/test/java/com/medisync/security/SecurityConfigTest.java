@@ -14,6 +14,7 @@ import com.medisync.user.entity.AppUser;
 import com.medisync.user.entity.UserRole;
 import com.medisync.user.repository.AppUserRepository;
 import com.medisync.user.service.UserService;
+import com.medisync.user.service.UserDeletionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -55,6 +56,9 @@ class SecurityConfigTest {
 
     @MockitoBean
     private UserService userService;
+
+    @MockitoBean
+    private UserDeletionService userDeletionService;
 
     @MockitoBean
     private MasterDataAdminService masterDataAdminService;

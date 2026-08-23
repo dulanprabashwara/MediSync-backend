@@ -123,7 +123,7 @@ class DoctorProfileServiceTest {
         profile.submitForVerification();
         profile.verify(UUID.randomUUID());
         DoctorProfileUpdateRequest update = new DoctorProfileUpdateRequest("SLMC-999", null, null, null,
-                null, null, "Updated bio");
+                null, null, "Updated bio", null, null, null, null);
 
         assertThatThrownBy(() -> service.updateProfile(jwt, update))
                 .isInstanceOf(ResourceConflictException.class)
@@ -132,7 +132,7 @@ class DoctorProfileServiceTest {
 
     private DoctorProfileUpdateRequest request(UUID hospitalId, UUID departmentId) {
         return new DoctorProfileUpdateRequest("SLMC-123", hospitalId, departmentId, specialization.getId(),
-                "MBBS", 4, null);
+                "MBBS", 4, null, null, null, null, null);
     }
 }
 

@@ -77,6 +77,18 @@ public class Prescription {
     @Column(name = "doctor_fee_confirmed_by")
     private UUID doctorFeeConfirmedBy;
 
+    @Column(name = "doctor_bank_account_holder", length = 200)
+    private String doctorBankAccountHolder;
+
+    @Column(name = "doctor_bank_name", length = 100)
+    private String doctorBankName;
+
+    @Column(name = "doctor_bank_branch", length = 100)
+    private String doctorBankBranch;
+
+    @Column(name = "doctor_bank_account_number", length = 50)
+    private String doctorBankAccountNumber;
+
     protected Prescription() {
     }
 
@@ -121,6 +133,10 @@ public class Prescription {
     }
 
     public void issue(OffsetDateTime now) {
+        issue(now, null, null, null, null);
+    }
+
+    public void issue(OffsetDateTime now, String accountHolder, String bankName, String bankBranch, String accountNumber) {
         requireStatus(PrescriptionStatus.DRAFT, "This prescription has already been finalized");
         status = PrescriptionStatus.ISSUED;
         issuedAt = now;
@@ -128,6 +144,12 @@ public class Prescription {
         doctorFeeStatus = doctorFeeAmount.signum() == 0
                 ? DoctorFeeStatus.NOT_REQUIRED
                 : DoctorFeeStatus.AWAITING_CONFIRMATION;
+        if (doctorFeeAmount.signum() > 0) {
+            this.doctorBankAccountHolder = accountHolder;
+            this.doctorBankName = bankName;
+            this.doctorBankBranch = bankBranch;
+            this.doctorBankAccountNumber = accountNumber;
+        }
     }
 
     public void confirmDoctorFee(UUID doctorUserId, OffsetDateTime now) {
@@ -176,4 +198,8 @@ public class Prescription {
     public DoctorFeeStatus getDoctorFeeStatus() { return doctorFeeStatus; }
     public OffsetDateTime getDoctorFeeConfirmedAt() { return doctorFeeConfirmedAt; }
     public UUID getDoctorFeeConfirmedBy() { return doctorFeeConfirmedBy; }
+    public String getDoctorBankAccountHolder() { return doctorBankAccountHolder; }
+    public String getDoctorBankName() { return doctorBankName; }
+    public String getDoctorBankBranch() { return doctorBankBranch; }
+    public String getDoctorBankAccountNumber() { return doctorBankAccountNumber; }
 }

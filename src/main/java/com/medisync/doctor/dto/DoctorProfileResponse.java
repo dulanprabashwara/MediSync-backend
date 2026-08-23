@@ -23,7 +23,11 @@ public record DoctorProfileResponse(
         OffsetDateTime verifiedAt,
         boolean profileComplete,
         boolean submitted,
-        boolean editable
+        boolean editable,
+        String bankAccountHolder,
+        String bankName,
+        String bankBranch,
+        String bankAccountNumber
 ) {
 }
 

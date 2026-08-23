@@ -182,8 +182,14 @@ public class PrescriptionService {
         if (count < 1 || count > 20) {
             throw new InvalidRequestException("An issued prescription must contain between 1 and 20 medicines");
         }
+        if (access.prescription().getDoctorFeeAmount().signum() > 0) {
+            if (context.doctor().getBankAccountHolder() == null || context.doctor().getBankName() == null ||
+                context.doctor().getBankBranch() == null || context.doctor().getBankAccountNumber() == null) {
+                throw new ResourceConflictException("Payment information must be provided in your profile to issue a paid prescription");
+            }
+        }
         OffsetDateTime now = OffsetDateTime.now(clock);
-        access.prescription().issue(now);
+        access.prescription().issue(now, context.doctor().getBankAccountHolder(), context.doctor().getBankName(), context.doctor().getBankBranch(), context.doctor().getBankAccountNumber());
         prescriptionRepository.saveAndFlush(access.prescription());
         audit(jwt, AuditActions.PRESCRIPTION_ISSUED, prescriptionId,
                 Map.of("paymentStatus", access.prescription().getDoctorFeeStatus().name(),

@@ -98,6 +98,12 @@ public class AppUser {
         this.status = AccountStatus.ACTIVE;
     }
 
+    public void updateProfile(String firstName, String lastName, String phone) {
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.phone = phone;
+    }
+
     public void ban() {
         this.status = AccountStatus.BANNED;
     }

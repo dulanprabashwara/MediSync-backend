@@ -20,7 +20,19 @@ public record DoctorProfileUpdateRequest(
         Integer yearsOfExperience,
 
         @Size(max = 2000, message = "Bio must be 2000 characters or fewer")
-        String bio
+        String bio,
+
+        @Size(max = 200, message = "Bank account holder must be 200 characters or fewer")
+        String bankAccountHolder,
+
+        @Size(max = 100, message = "Bank name must be 100 characters or fewer")
+        String bankName,
+
+        @Size(max = 100, message = "Bank branch must be 100 characters or fewer")
+        String bankBranch,
+
+        @Size(max = 50, message = "Bank account number must be 50 characters or fewer")
+        String bankAccountNumber
 ) {
 }
 

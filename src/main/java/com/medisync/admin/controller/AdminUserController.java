@@ -1,5 +1,7 @@
 package com.medisync.admin.controller;
 
+import com.medisync.admin.dto.AdminBanHistoryResponse;
+
 import com.medisync.admin.dto.AdminAccountDeletionRequest;
 import com.medisync.admin.dto.AdminUserDetail;
 import com.medisync.admin.dto.AdminUserSummary;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -87,4 +90,6 @@ public class AdminUserController {
         userDeletionService.deleteAccountByAdmin(jwt, userId, request.reason());
         return service.details(userId);
     }
+
+
 }

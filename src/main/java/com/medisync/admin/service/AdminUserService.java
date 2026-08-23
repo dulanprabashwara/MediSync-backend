@@ -1,6 +1,8 @@
 package com.medisync.admin.service;
 
 import com.medisync.admin.dto.AdminBanHistoryResponse;
+import com.medisync.admin.dto.AdminSelfProfileUpdateRequest;
+import com.medisync.user.dto.UserResponse;
 import com.medisync.admin.dto.AdminUserDetail;
 import com.medisync.admin.dto.AdminUserSummary;
 import com.medisync.audit.AuditActions;
@@ -250,6 +252,10 @@ public class AdminUserService {
                 put(result, "department", labels.departmentName());
                 put(result, "specialization", labels.specializationName());
                 put(result, "yearsOfExperience", profile.getYearsOfExperience());
+                put(result, "bankAccountHolder", profile.getBankAccountHolder());
+                put(result, "bankName", profile.getBankName());
+                put(result, "bankBranch", profile.getBankBranch());
+                put(result, "bankAccountNumber", profile.getBankAccountNumber());
             });
         } else if (user.getRole() == UserRole.PHARMACIST) {
             pharmacistRepository.findByUserId(user.getId()).ifPresent(profile -> {
@@ -323,5 +329,18 @@ public class AdminUserService {
         private static ProfessionalLabels empty() {
             return new ProfessionalLabels(null, null, null, null);
         }
+    }
+
+
+    @Transactional
+    public UserResponse updateSelfProfile(Jwt jwt, AdminSelfProfileUpdateRequest request) {
+        AppUser admin = currentUserService.requireRole(jwt, UserRole.ADMIN, AccountStatus.ACTIVE);
+
+        admin.updateProfile(request.firstName().trim(), request.lastName().trim(), 
+            request.phone() == null || request.phone().isBlank() ? null : request.phone().trim());
+        userRepository.saveAndFlush(admin);
+        
+        auditService.record(admin, AuditActions.USER_UPDATED, "APP_USER", admin.getId(), java.util.Map.of("updatedFields", "basicInfo"));
+        return UserResponse.from(admin, mediaUrlService.signedUrlOrNull(admin.getProfileImageKey()));
     }
 }

@@ -78,6 +78,8 @@ public class DoctorProfileService {
         validateReferences(request.hospitalId(), request.departmentId(), request.specializationId(), true);
         profile.updateProfessionalProfile(registrationNumber, request.hospitalId(), request.departmentId(),
                 request.specializationId(), qualifications, request.yearsOfExperience(), optional(request.bio()));
+        profile.updatePaymentDetails(optional(request.bankAccountHolder()), optional(request.bankName()),
+                optional(request.bankBranch()), optional(request.bankAccountNumber()));
         return response(doctorProfileRepository.saveAndFlush(profile));
     }
 
@@ -164,7 +166,9 @@ public class DoctorProfileService {
                 profile.getYearsOfExperience(), profile.getBio(), profile.getVerificationStatus(),
                 profile.getVerificationRejectionReason(), profile.getSubmittedForVerificationAt(),
                 profile.getVerifiedAt(), profile.isComplete(), profile.isAwaitingReview(),
-                profile.getVerificationStatus() != VerificationStatus.VERIFIED && !profile.isAwaitingReview());
+                profile.getVerificationStatus() != VerificationStatus.VERIFIED && !profile.isAwaitingReview(),
+                profile.getBankAccountHolder(), profile.getBankName(), profile.getBankBranch(),
+                profile.getBankAccountNumber());
     }
 
     private String optional(String value) {
