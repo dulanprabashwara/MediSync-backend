@@ -61,6 +61,8 @@ public class DoctorProfileService {
         if (profile.getVerificationStatus() == VerificationStatus.VERIFIED) {
             ensureVerifiedIdentityUnchanged(profile, request);
             profile.updateBio(optional(request.bio()));
+            profile.updatePaymentDetails(optional(request.bankAccountHolder()), optional(request.bankName()),
+                    optional(request.bankBranch()), optional(request.bankAccountNumber()));
             return response(doctorProfileRepository.saveAndFlush(profile));
         }
         if (profile.isAwaitingReview()) {
