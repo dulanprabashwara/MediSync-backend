@@ -27,6 +27,6 @@ public record ConsultationResponse(
         OffsetDateTime cancelledAt,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
-        ConsultationPaymentSummary paymentSummary
+        java.util.List<ConsultationPaymentSummary> paymentSummaries
 ) {
 }

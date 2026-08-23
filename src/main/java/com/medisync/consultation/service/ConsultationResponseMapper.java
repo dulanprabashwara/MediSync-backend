@@ -65,7 +65,7 @@ public class ConsultationResponseMapper {
         AppointmentSymptoms symptoms = symptomsRepository.findByAppointmentId(context.appointment().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment symptoms not found"));
 
-        ConsultationPaymentSummary paymentSummary = buildPaymentSummary(context.consultation().getId());
+        List<ConsultationPaymentSummary> paymentSummaries = buildPaymentSummaries(context.consultation().getId());
 
         return new ConsultationResponse(
                 context.consultation().getId(),
@@ -87,38 +87,40 @@ public class ConsultationResponseMapper {
                 context.consultation().getCancelledAt(),
                 context.consultation().getCreatedAt(),
                 context.consultation().getUpdatedAt(),
-                paymentSummary);
+                paymentSummaries);
     }
 
-    private ConsultationPaymentSummary buildPaymentSummary(UUID consultationId) {
+    private List<ConsultationPaymentSummary> buildPaymentSummaries(UUID consultationId) {
         List<Prescription> prescriptions = prescriptionRepository
                 .findByConsultationIdOrderByCreatedAtDesc(consultationId);
-        Prescription issued = prescriptions.stream()
+        
+        return prescriptions.stream()
                 .filter(p -> p.getStatus() == PrescriptionStatus.ISSUED)
-                .findFirst()
-                .orElse(null);
-        if (issued == null) {
-            return null;
-        }
-        boolean expired = issued.getValidUntil() != null
-                && !OffsetDateTime.now(clock).isBefore(issued.getValidUntil());
-        boolean dispensed = dispensationRepository.existsByPrescriptionId(issued.getId());
-        DispensingStatus dispensingStatus = dispensed ? DispensingStatus.DISPENSED : DispensingStatus.NOT_DISPENSED;
-        boolean qrAllowed = issued.isQrPaymentEligible() && !expired && !dispensed;
-        return new ConsultationPaymentSummary(
-                issued.getId(),
-                issued.getStatus(),
-                issued.getDoctorFeeAmount(),
-                issued.getDoctorFeeCurrency(),
-                issued.getDoctorFeeStatus(),
-                issued.getDoctorFeeConfirmedAt(),
-                qrAllowed,
-                dispensingStatus,
-                issued.getDoctorBankAccountHolder(),
-                issued.getDoctorBankName(),
-                issued.getDoctorBankBranch(),
-                issued.getDoctorBankAccountNumber());
+                .map(issued -> {
+                    boolean expired = issued.getValidUntil() != null
+                            && !OffsetDateTime.now(clock).isBefore(issued.getValidUntil());
+                    boolean dispensed = dispensationRepository.existsByPrescriptionId(issued.getId());
+                    DispensingStatus dispensingStatus = dispensed ? DispensingStatus.DISPENSED : DispensingStatus.NOT_DISPENSED;
+                    
+                    boolean qrAllowed = issued.isQrPaymentEligible() && !expired && !dispensed;
+                    
+                    return new ConsultationPaymentSummary(
+                            issued.getId(),
+                            issued.getStatus(),
+                            issued.getDoctorFeeAmount(),
+                            issued.getDoctorFeeCurrency(),
+                            issued.getDoctorFeeStatus(),
+                            issued.getDoctorFeeConfirmedAt(),
+                            qrAllowed,
+                            dispensingStatus,
+                            issued.getDoctorBankAccountHolder(),
+                            issued.getDoctorBankName(),
+                            issued.getDoctorBankBranch(),
+                            issued.getDoctorBankAccountNumber());
+                })
+                .toList();
     }
+
 
     private String fullName(com.medisync.user.entity.AppUser user) {
         return user.getFirstName() + " " + user.getLastName();
