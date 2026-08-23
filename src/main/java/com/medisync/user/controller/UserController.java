@@ -60,6 +60,12 @@ public class UserController {
         return userService.getCurrentUser(jwt);
     }
 
+    @org.springframework.web.bind.annotation.PatchMapping("/me")
+    public UserResponse updateSelfProfile(@AuthenticationPrincipal Jwt jwt,
+                                          @Valid @RequestBody com.medisync.user.dto.UserProfileUpdateRequest request) {
+        return userService.updateSelfProfile(jwt, request);
+    }
+
     @DeleteMapping("/me")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteSelfAccount(@AuthenticationPrincipal Jwt jwt) {

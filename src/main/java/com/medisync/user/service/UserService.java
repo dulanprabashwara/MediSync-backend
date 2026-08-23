@@ -85,6 +85,21 @@ public class UserService {
     }
 
     @Transactional
+    public UserResponse updateSelfProfile(Jwt jwt, com.medisync.user.dto.UserProfileUpdateRequest request) {
+        UUID authUserId = authenticatedUserId(jwt);
+        AppUser user = appUserRepository.findByAuthUserId(authUserId)
+                .orElseThrow(OnboardingRequiredException::new);
+
+        user.setFirstName(request.firstName().trim());
+        user.setLastName(request.lastName().trim());
+        user.setPhone(normalizePhone(request.phone()));
+
+        AppUser savedUser = appUserRepository.saveAndFlush(user);
+        return UserResponse.from(savedUser, mediaUrlService == null
+                ? null : mediaUrlService.signedUrlOrNull(savedUser.getProfileImageKey()));
+    }
+
+    @Transactional
     public UserResponse onboard(Jwt jwt, OnboardingRequest request) {
         UUID authUserId = authenticatedUserId(jwt);
         String email = authenticatedEmail(jwt);
