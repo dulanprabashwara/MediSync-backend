@@ -71,4 +71,13 @@ public class PatientConsultationController {
             @RequestPart(value = "images", required = false) List<MultipartFile> images) {
         return chatService.sendPatientMedia(jwt, consultationId, content, images);
     }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/{consultationId}/messages/{messageId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID consultationId,
+            @PathVariable UUID messageId) {
+        chatService.deletePatientMessage(jwt, consultationId, messageId);
+    }
 }

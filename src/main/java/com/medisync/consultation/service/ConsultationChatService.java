@@ -23,7 +23,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.stream.Collectors;
 import org.springframework.web.multipart.MultipartFile;
 import com.medisync.media.ImageUploadValidator;
@@ -203,6 +202,11 @@ public class ConsultationChatService {
         } else {
             throw new ResourceConflictException("Message sender is not a consultation participant");
         }
+        if (message.isDeleted()) {
+            return new ConsultationMessageResponse(message.getId(), message.getConsultationId(), senderType,
+                    senderDisplayName, senderProfileImageUrl, null, List.of(), message.getSentAt(), true, message.getDeletedAt());
+        }
+
         List<ConsultationMessageAttachmentResponse> attachmentResponses = attachments.stream()
                 .map(attachment -> new ConsultationMessageAttachmentResponse(attachment.getId(),
                         attachment.getContentType(), attachment.getOriginalFilename(), attachment.getByteSize(),
@@ -210,7 +214,7 @@ public class ConsultationChatService {
                                 ? null : mediaUrlService.signedUrlOrNull(attachment.getStorageKey())))
                 .toList();
         return new ConsultationMessageResponse(message.getId(), message.getConsultationId(), senderType,
-                senderDisplayName, senderProfileImageUrl, message.getContent(), attachmentResponses, message.getSentAt());
+                senderDisplayName, senderProfileImageUrl, message.getContent(), attachmentResponses, message.getSentAt(), false, null);
     }
 
     private String validateContent(String value, boolean hasImages) {
@@ -240,6 +244,43 @@ public class ConsultationChatService {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new InvalidRequestException("Page must be non-negative and size must be between 1 and 100");
         }
+    }
+
+    @Transactional
+    public void deletePatientMessage(Jwt jwt, UUID consultationId, UUID messageId) {
+        var context = accessService.requirePatient(jwt, consultationId, true);
+        deleteMessage(context, messageId, context.patientUser().getId());
+    }
+
+    @Transactional
+    public void deleteDoctorMessage(Jwt jwt, UUID consultationId, UUID messageId) {
+        var context = accessService.requireDoctor(jwt, consultationId, true);
+        deleteMessage(context, messageId, context.doctorUser().getId());
+    }
+
+    private void deleteMessage(ConsultationAccessService.ConsultationContext context, UUID messageId, UUID senderUserId) {
+        accessService.requireChatWritable(context);
+        ConsultationMessage message = messageRepository.findById(messageId)
+                .orElseThrow(() -> new InvalidRequestException("Message not found"));
+
+        if (!message.getConsultationId().equals(context.consultation().getId())) {
+            throw new InvalidRequestException("Message does not belong to this consultation");
+        }
+        if (!message.getSenderUserId().equals(senderUserId)) {
+            throw new org.springframework.security.access.AccessDeniedException("You can only delete your own messages");
+        }
+        if (message.isDeleted()) {
+            return; // Idempotent
+        }
+
+        message.softDelete();
+        messageRepository.saveAndFlush(message);
+
+        // We choose to leave attachments in the DB and Storage to preserve history, 
+        // but we won't serve them in the API anymore because of the isDeleted() check.
+        // We only notify the frontend.
+        ConsultationMessageResponse deletedResponse = toResponse(context, message, List.of());
+        realtimePublisher.publishAfterCommit(context.appointment(), ConsultationEvent.messageDeleted(deletedResponse));
     }
 
     private String fullName(com.medisync.user.entity.AppUser user) {

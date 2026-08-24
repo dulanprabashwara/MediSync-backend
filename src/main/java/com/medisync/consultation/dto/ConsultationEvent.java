@@ -14,6 +14,10 @@ public record ConsultationEvent(
         return new ConsultationEvent(ConsultationEventType.NEW_MESSAGE, message.consultationId(), message, null);
     }
 
+    public static ConsultationEvent messageDeleted(ConsultationMessageResponse message) {
+        return new ConsultationEvent(ConsultationEventType.MESSAGE_DELETED, message.consultationId(), message, null);
+    }
+
     public static ConsultationEvent statusChanged(UUID consultationId, ConsultationStatus status) {
         return new ConsultationEvent(ConsultationEventType.CONSULTATION_STATUS_CHANGED,
                 consultationId, null, status);

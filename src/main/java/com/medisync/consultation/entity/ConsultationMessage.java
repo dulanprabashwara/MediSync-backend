@@ -29,6 +29,9 @@ public class ConsultationMessage {
     @Column(name = "sent_at", nullable = false)
     private OffsetDateTime sentAt;
 
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
+
     protected ConsultationMessage() {
     }
 
@@ -44,9 +47,18 @@ public class ConsultationMessage {
         sentAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
 
+    public void softDelete() {
+        this.deletedAt = OffsetDateTime.now(ZoneOffset.UTC);
+    }
+
+    public boolean isDeleted() {
+        return this.deletedAt != null;
+    }
+
     public UUID getId() { return id; }
     public UUID getConsultationId() { return consultationId; }
     public UUID getSenderUserId() { return senderUserId; }
     public String getContent() { return content; }
     public OffsetDateTime getSentAt() { return sentAt; }
+    public OffsetDateTime getDeletedAt() { return deletedAt; }
 }

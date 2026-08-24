@@ -100,4 +100,13 @@ public class DoctorConsultationController {
             @Valid @RequestBody UpdateClinicalNoteRequest request) {
         return consultationService.updateClinicalNote(jwt, consultationId, request);
     }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/{consultationId}/messages/{messageId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID consultationId,
+            @PathVariable UUID messageId) {
+        chatService.deleteDoctorMessage(jwt, consultationId, messageId);
+    }
 }

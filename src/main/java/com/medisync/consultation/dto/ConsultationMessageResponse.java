@@ -12,11 +12,13 @@ public record ConsultationMessageResponse(
         String senderProfileImageUrl,
         String content,
         List<ConsultationMessageAttachmentResponse> attachments,
-        OffsetDateTime sentAt
+        OffsetDateTime sentAt,
+        boolean deleted,
+        OffsetDateTime deletedAt
 ) {
     public ConsultationMessageResponse(UUID messageId, UUID consultationId,
                                        ConsultationSenderType senderType, String senderDisplayName,
                                        String content, OffsetDateTime sentAt) {
-        this(messageId, consultationId, senderType, senderDisplayName, null, content, List.of(), sentAt);
+        this(messageId, consultationId, senderType, senderDisplayName, null, content, List.of(), sentAt, false, null);
     }
 }
