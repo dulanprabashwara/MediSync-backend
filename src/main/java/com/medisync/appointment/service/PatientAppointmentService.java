@@ -180,6 +180,13 @@ public class PatientAppointmentService {
         validatePage(page, size);
         Page<Appointment> appointments = appointmentRepository.findByPatientId(patient.getId(),
                 PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "scheduledStart")));
+        
+        System.out.println("DEBUG - Fetching appointments for patient: " + patient.getId());
+        System.out.println("DEBUG - Found appointments count: " + appointments.getContent().size());
+        for (Appointment a : appointments.getContent()) {
+            System.out.println("DEBUG - Appointment ID: " + a.getId() + ", Status: " + a.getStatus() + ", Starts: " + a.getScheduledStart());
+        }
+        
         return PageResponse.from(appointments, responseMapper::toResponse);
     }
 

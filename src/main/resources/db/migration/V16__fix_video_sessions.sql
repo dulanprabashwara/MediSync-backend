@@ -1,6 +1,8 @@
+DROP TABLE IF EXISTS consultation_video_sessions;
+
 CREATE TABLE consultation_video_sessions (
     id UUID PRIMARY KEY,
-    consultation_id UUID UNIQUE NOT NULL REFERENCES appointments(id),
+    consultation_id UUID UNIQUE NOT NULL REFERENCES consultation_sessions(id),
     provider VARCHAR(50) NOT NULL DEFAULT 'LIVEKIT',
     provider_room_name VARCHAR(100) UNIQUE NOT NULL,
     status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
