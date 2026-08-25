@@ -75,6 +75,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/users/me/profile-image")
                         .access(new ApplicationAccountAuthorizationManager(appUserRepository))
                         .requestMatchers("/api/users/me", "/api/users/onboarding").authenticated()
+                        .requestMatchers("/api/notifications/**")
+                        .access(new ApplicationAccountAuthorizationManager(appUserRepository))
                         .anyRequest().denyAll()
                 )
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(Customizer.withDefaults()))
