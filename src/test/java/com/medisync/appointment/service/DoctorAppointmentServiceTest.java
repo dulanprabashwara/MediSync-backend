@@ -33,6 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
@@ -47,6 +48,9 @@ class DoctorAppointmentServiceTest {
     @Mock AppointmentResponseMapper responseMapper;
     @Mock ConsultationSessionRepository consultationRepository;
     @Mock ConsultationRealtimePublisher realtimePublisher;
+    @Mock com.medisync.user.repository.AppUserRepository appUserRepository;
+    @Mock com.medisync.notification.service.NotificationService notificationService;
+    @Mock com.medisync.user.repository.PatientProfileRepository patientProfileRepository;
 
     private DoctorAppointmentService service;
     private Jwt jwt;
@@ -58,7 +62,7 @@ class DoctorAppointmentServiceTest {
     @BeforeEach
     void setUp() {
         service = new DoctorAppointmentService(currentUserService, doctorProfileRepository, appointmentRepository,
-                slotRepository, responseMapper, consultationRepository, realtimePublisher);
+                slotRepository, responseMapper, consultationRepository, realtimePublisher, appUserRepository, notificationService, patientProfileRepository);
         UUID authId = UUID.randomUUID();
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(authId.toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
@@ -166,6 +170,12 @@ class DoctorAppointmentServiceTest {
     private void allowDoctorAndLockedAppointment() {
         allowDoctor();
         when(appointmentRepository.findByIdForUpdate(appointment.getId())).thenReturn(Optional.of(appointment));
+        
+        lenient().when(appUserRepository.findById(doctor.getUserId())).thenReturn(Optional.of(doctorUser));
+        com.medisync.user.entity.PatientProfile patientProfile = new com.medisync.user.entity.PatientProfile(UUID.randomUUID());
+        lenient().when(patientProfileRepository.findById(appointment.getPatientId())).thenReturn(Optional.of(patientProfile));
+        AppUser patientUser = new AppUser(patientProfile.getUserId(), "patient@example.com", "John", "Doe", null, UserRole.PATIENT, AccountStatus.ACTIVE);
+        lenient().when(appUserRepository.findById(patientProfile.getUserId())).thenReturn(Optional.of(patientUser));
     }
 
     private void allowDoctor() {

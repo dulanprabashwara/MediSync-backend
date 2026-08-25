@@ -9,6 +9,7 @@ public enum NotificationType {
 
     // CHAT
     NEW_CHAT_MESSAGE,
+    NEW_CHAT_ATTACHMENT,
 
     // PRESCRIPTION / PAYMENT
     PRESCRIPTION_ISSUED,

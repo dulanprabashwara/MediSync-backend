@@ -19,6 +19,7 @@ import com.medisync.media.ImageUploadValidator;
 import com.medisync.media.MediaStorageService;
 import com.medisync.media.MediaUrlService;
 import com.medisync.media.ValidatedImage;
+import com.medisync.notification.service.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,6 +51,7 @@ class ConsultationChatServiceTest {
     @Mock MediaStorageService storageService;
     @Mock MediaUrlService mediaUrlService;
     @Mock AuditService auditService;
+    @Mock NotificationService notificationService;
 
     private ConsultationChatService service;
     private Jwt jwt;
@@ -58,7 +60,7 @@ class ConsultationChatServiceTest {
     @BeforeEach
     void setUp() {
         service = new ConsultationChatService(accessService, messageRepository, realtimePublisher,
-                attachmentRepository, imageValidator, storageService, mediaUrlService, auditService);
+                attachmentRepository, imageValidator, storageService, mediaUrlService, auditService, notificationService);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(UUID.randomUUID().toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
         context = scheduledContext();
@@ -145,6 +147,34 @@ class ConsultationChatServiceTest {
         verify(auditService).record(org.mockito.Mockito.eq(context.patientUser()),
                 org.mockito.Mockito.eq(com.medisync.audit.AuditActions.CHAT_IMAGES_SENT),
                 org.mockito.Mockito.eq("CONSULTATION"), org.mockito.Mockito.eq(context.consultation().getId()), any());
+    }
+
+    @Test
+    void patientSendingMediaTriggersAttachmentNotification() {
+        context.consultation().start();
+        when(accessService.requirePatient(jwt, context.consultation().getId(), true)).thenReturn(context);
+        when(messageRepository.save(any(ConsultationMessage.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        byte[] bytes = new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff, 0x01};
+        MockMultipartFile upload = new MockMultipartFile("images", "scan.jpg", "image/jpeg", bytes);
+        when(imageValidator.validate(upload)).thenReturn(
+                new ValidatedImage(bytes, "image/jpeg", "jpg", "scan.jpg"));
+        when(mediaUrlService.signedUrlOrNull(any())).thenAnswer(invocation ->
+                invocation.getArgument(0) == null ? null : "https://signed.example/private");
+
+        service.sendPatientMedia(jwt, context.consultation().getId(), "Here is my scan", java.util.List.of(upload));
+
+        verify(notificationService).createNotification(
+                org.mockito.Mockito.eq(context.doctorUser().getId()),
+                org.mockito.Mockito.eq(context.patientUser().getId()),
+                org.mockito.Mockito.eq(com.medisync.notification.NotificationType.NEW_CHAT_ATTACHMENT),
+                org.mockito.Mockito.eq("New chat attachment"),
+                anyString(),
+                anyString(),
+                org.mockito.Mockito.eq("CONSULTATION"),
+                org.mockito.Mockito.eq(context.consultation().getId()),
+                anyString()
+        );
     }
 
     @Test

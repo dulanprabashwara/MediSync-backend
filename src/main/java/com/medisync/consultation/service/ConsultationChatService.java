@@ -18,6 +18,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.medisync.notification.service.NotificationService;
+import com.medisync.notification.NotificationType;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -52,6 +55,7 @@ public class ConsultationChatService {
     private final MediaStorageService storageService;
     private final MediaUrlService mediaUrlService;
     private final AuditService auditService;
+    private final NotificationService notificationService;
 
     @Autowired
     public ConsultationChatService(ConsultationAccessService accessService,
@@ -61,7 +65,8 @@ public class ConsultationChatService {
                                    ImageUploadValidator imageValidator,
                                    MediaStorageService storageService,
                                    MediaUrlService mediaUrlService,
-                                   AuditService auditService) {
+                                   AuditService auditService,
+                                   NotificationService notificationService) {
         this.accessService = accessService;
         this.messageRepository = messageRepository;
         this.realtimePublisher = realtimePublisher;
@@ -70,12 +75,13 @@ public class ConsultationChatService {
         this.storageService = storageService;
         this.mediaUrlService = mediaUrlService;
         this.auditService = auditService;
+        this.notificationService = notificationService;
     }
 
     ConsultationChatService(ConsultationAccessService accessService,
                             ConsultationMessageRepository messageRepository,
                             ConsultationRealtimePublisher realtimePublisher) {
-        this(accessService, messageRepository, realtimePublisher, null, null, null, null, null);
+        this(accessService, messageRepository, realtimePublisher, null, null, null, null, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -179,6 +185,23 @@ public class ConsultationChatService {
                     "CONSULTATION", context.consultation().getId(),
                     Map.of("attachmentCount", attachments.size()));
         }
+
+        if (!attachments.isEmpty() && senderUserId.equals(context.patientUser().getId()) && notificationService != null) {
+            // Notification: NEW_CHAT_ATTACHMENT -> Doctor
+            String patientName = context.patientUser().getFirstName() + " " + context.patientUser().getLastName();
+            notificationService.createNotification(
+                    context.doctorUser().getId(),
+                    context.patientUser().getId(),
+                    NotificationType.NEW_CHAT_ATTACHMENT,
+                    "New chat attachment",
+                    patientName + " sent a new attachment.",
+                    "/doctor/consultations/" + context.consultation().getId(),
+                    "CONSULTATION",
+                    context.consultation().getId(),
+                    "consultation:" + context.consultation().getId() + ":attachment:" + message.getId()
+            );
+        }
+
         realtimePublisher.publishAfterCommit(context.appointment(), ConsultationEvent.newMessage(response));
         return response;
     }

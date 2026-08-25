@@ -35,6 +35,14 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
+import com.medisync.notification.service.NotificationService;
+import com.medisync.notification.NotificationType;
+import com.medisync.user.repository.AppUserRepository;
+import com.medisync.user.entity.AppUser;
+import com.medisync.user.entity.PatientProfile;
+import com.medisync.user.repository.PatientProfileRepository;
+import java.time.format.DateTimeFormatter;
+
 @Service
 public class DoctorAppointmentService {
 
@@ -48,13 +56,20 @@ public class DoctorAppointmentService {
     private final ConsultationSessionRepository consultationRepository;
     private final ConsultationRealtimePublisher realtimePublisher;
 
+    private final AppUserRepository appUserRepository;
+    private final NotificationService notificationService;
+    private final PatientProfileRepository patientProfileRepository;
+
     public DoctorAppointmentService(CurrentUserService currentUserService,
                                     DoctorProfileRepository doctorProfileRepository,
                                     AppointmentRepository appointmentRepository,
                                     AppointmentSlotRepository slotRepository,
                                     AppointmentResponseMapper responseMapper,
                                     ConsultationSessionRepository consultationRepository,
-                                    ConsultationRealtimePublisher realtimePublisher) {
+                                    ConsultationRealtimePublisher realtimePublisher,
+                                    AppUserRepository appUserRepository,
+                                    NotificationService notificationService,
+                                    PatientProfileRepository patientProfileRepository) {
         this.currentUserService = currentUserService;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appointmentRepository = appointmentRepository;
@@ -62,6 +77,9 @@ public class DoctorAppointmentService {
         this.responseMapper = responseMapper;
         this.consultationRepository = consultationRepository;
         this.realtimePublisher = realtimePublisher;
+        this.appUserRepository = appUserRepository;
+        this.notificationService = notificationService;
+        this.patientProfileRepository = patientProfileRepository;
     }
 
     @Transactional(readOnly = true)
@@ -102,6 +120,31 @@ public class DoctorAppointmentService {
         }
         realtimePublisher.publishAfterCommit(appointment,
                 ConsultationEvent.statusChanged(consultation.getId(), consultation.getStatus()));
+
+        // Notification: APPOINTMENT_ACCEPTED -> Patient
+        AppUser doctorUser = appUserRepository.findById(doctor.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor user not found"));
+        PatientProfile patient = patientProfileRepository.findById(appointment.getPatientId())
+                .orElseThrow(() -> new ResourceNotFoundException("Patient profile not found"));
+        AppUser patientUser = appUserRepository.findById(patient.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Patient user not found"));
+        
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm");
+        String formattedDateTime = appointment.getScheduledStart().format(formatter);
+        String doctorName = "Dr. " + doctorUser.getLastName();
+
+        notificationService.createNotification(
+                patientUser.getId(),
+                doctorUser.getId(),
+                NotificationType.APPOINTMENT_ACCEPTED,
+                "Consultation confirmed",
+                doctorName + " confirmed your consultation for " + formattedDateTime + ".",
+                "/patient/appointments",
+                "APPOINTMENT",
+                appointment.getId(),
+                "appointment:" + appointment.getId() + ":accepted:" + patientUser.getId()
+        );
+
         return responseMapper.toResponse(appointment);
     }
 
@@ -115,6 +158,31 @@ public class DoctorAppointmentService {
         }
         appointment.reject(reason.trim());
         slot.release();
+
+        // Notification: APPOINTMENT_REJECTED -> Patient
+        AppUser doctorUser = appUserRepository.findById(doctor.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor user not found"));
+        PatientProfile patient = patientProfileRepository.findById(appointment.getPatientId())
+                .orElseThrow(() -> new ResourceNotFoundException("Patient profile not found"));
+        AppUser patientUser = appUserRepository.findById(patient.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Patient user not found"));
+        
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm");
+        String formattedDateTime = appointment.getScheduledStart().format(formatter);
+        String doctorName = "Dr. " + doctorUser.getLastName();
+
+        notificationService.createNotification(
+                patientUser.getId(),
+                doctorUser.getId(),
+                NotificationType.APPOINTMENT_REJECTED,
+                "Consultation declined",
+                doctorName + " declined your consultation request for " + formattedDateTime + ".",
+                "/patient/appointments",
+                "APPOINTMENT",
+                appointment.getId(),
+                "appointment:" + appointment.getId() + ":rejected:" + patientUser.getId()
+        );
+
         return responseMapper.toResponse(appointment);
     }
 
@@ -138,6 +206,31 @@ public class DoctorAppointmentService {
             realtimePublisher.publishAfterCommit(appointment,
                     ConsultationEvent.statusChanged(consultation.getId(), consultation.getStatus()));
         }
+
+        // Notification: CONSULTATION_CANCELLED -> Patient
+        AppUser doctorUser = appUserRepository.findById(doctor.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor user not found"));
+        PatientProfile patient = patientProfileRepository.findById(appointment.getPatientId())
+                .orElseThrow(() -> new ResourceNotFoundException("Patient profile not found"));
+        AppUser patientUser = appUserRepository.findById(patient.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Patient user not found"));
+        
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm");
+        String formattedDateTime = appointment.getScheduledStart().format(formatter);
+        String doctorName = "Dr. " + doctorUser.getLastName();
+
+        notificationService.createNotification(
+                patientUser.getId(),
+                doctorUser.getId(),
+                NotificationType.CONSULTATION_CANCELLED,
+                "Consultation cancelled",
+                doctorName + " cancelled the consultation scheduled for " + formattedDateTime + ".",
+                "/patient/appointments",
+                "APPOINTMENT",
+                appointment.getId(),
+                "appointment:" + appointment.getId() + ":doctor-cancelled:" + patientUser.getId()
+        );
+
         return responseMapper.toResponse(appointment);
     }
 

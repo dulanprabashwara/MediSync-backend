@@ -13,11 +13,11 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     Page<Notification> findByRecipientUserId(UUID recipientUserId, Pageable pageable);
 
-    @Query("SELECT COUNT(n) FROM Notification n WHERE n.recipientUser.id = :recipientUserId AND n.isRead = false")
+    @Query("SELECT COUNT(n) FROM Notification n WHERE n.recipientUser.id = :recipientUserId AND n.read = false")
     long countUnreadByRecipientUserId(@Param("recipientUserId") UUID recipientUserId);
 
     @Modifying
-    @Query("UPDATE Notification n SET n.isRead = true, n.readAt = CURRENT_TIMESTAMP WHERE n.recipientUser.id = :recipientUserId AND n.isRead = false")
+    @Query("UPDATE Notification n SET n.read = true, n.readAt = CURRENT_TIMESTAMP WHERE n.recipientUser.id = :recipientUserId AND n.read = false")
     int markAllAsRead(@Param("recipientUserId") UUID recipientUserId);
     
     boolean existsByDedupeKey(String dedupeKey);

@@ -73,6 +73,7 @@ class PatientAppointmentServiceTest {
     @Mock AppointmentResponseMapper responseMapper;
     @Mock ConsultationSessionRepository consultationRepository;
     @Mock ConsultationRealtimePublisher realtimePublisher;
+    @Mock com.medisync.notification.service.NotificationService notificationService;
 
     private PatientAppointmentService service;
     private Jwt jwt;
@@ -89,7 +90,7 @@ class PatientAppointmentServiceTest {
                 windowRepository, doctorProfileRepository, appUserRepository, hospitalRepository,
                 departmentRepository, specializationRepository, appointmentRepository, symptomsRepository,
                 responseMapper, new AppointmentProperties(0), consultationRepository, realtimePublisher,
-                Clock.systemUTC());
+                Clock.systemUTC(), notificationService);
         UUID patientAuth = UUID.randomUUID();
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(patientAuth.toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
@@ -158,7 +159,7 @@ class PatientAppointmentServiceTest {
                 windowRepository, doctorProfileRepository, appUserRepository, hospitalRepository,
                 departmentRepository, specializationRepository, appointmentRepository, symptomsRepository,
                 responseMapper, new AppointmentProperties(10), consultationRepository, realtimePublisher,
-                Clock.fixed(now.toInstant(), ZoneId.of("UTC")));
+                Clock.fixed(now.toInstant(), ZoneId.of("UTC")), notificationService);
         allowPatientAndSlot();
 
         assertThatThrownBy(() -> service.create(jwt, request()))
@@ -201,6 +202,9 @@ class PatientAppointmentServiceTest {
         when(patientProfileRepository.findByUserId(patientUser.getId())).thenReturn(Optional.of(patient));
         when(appointmentRepository.findByIdForUpdate(appointment.getId())).thenReturn(Optional.of(appointment));
         when(slotRepository.findByIdForUpdate(slot.getId())).thenReturn(Optional.of(slot));
+        when(doctorProfileRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(appUserRepository.findById(doctorUser.getId())).thenReturn(Optional.of(doctorUser));
+        when(appUserRepository.findById(patientUser.getId())).thenReturn(Optional.of(patientUser));
 
         service.cancel(jwt, appointment.getId(), new CancelAppointmentRequest("No longer available"));
 
@@ -223,6 +227,9 @@ class PatientAppointmentServiceTest {
         when(slotRepository.findByIdForUpdate(slot.getId())).thenReturn(Optional.of(slot));
         when(consultationRepository.findByAppointmentIdForUpdate(appointment.getId()))
                 .thenReturn(Optional.of(consultation));
+        when(doctorProfileRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(appUserRepository.findById(doctorUser.getId())).thenReturn(Optional.of(doctorUser));
+        when(appUserRepository.findById(patientUser.getId())).thenReturn(Optional.of(patientUser));
 
         service.cancel(jwt, appointment.getId(), null);
 
