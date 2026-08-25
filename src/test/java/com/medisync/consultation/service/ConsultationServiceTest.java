@@ -39,6 +39,7 @@ class ConsultationServiceTest {
     @Mock ConsultationClinicalNoteRepository noteRepository;
     @Mock ConsultationRealtimePublisher realtimePublisher;
     @Mock PrescriptionRepository prescriptionRepository;
+    @Mock VideoConsultationService videoConsultationService;
 
     private ConsultationService service;
     private Jwt jwt;
@@ -47,7 +48,7 @@ class ConsultationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ConsultationService(accessService, responseMapper, noteRepository, realtimePublisher,
-                prescriptionRepository);
+                prescriptionRepository, videoConsultationService);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(UUID.randomUUID().toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
         context = scheduledContext();

@@ -45,6 +45,10 @@ medisync:
   prescriptions:
     payment:
       currency: ${DOCTOR_FEE_CURRENCY:LKR}
+  livekit:
+    url: ${LIVEKIT_URL}
+    api-key: ${LIVEKIT_API_KEY}
+    api-secret: ${LIVEKIT_API_SECRET}
 
 logging:
   level:

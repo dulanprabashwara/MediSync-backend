@@ -17,6 +17,7 @@ import com.medisync.consultation.entity.ConsultationSession;
 import com.medisync.consultation.entity.ConsultationStatus;
 import com.medisync.consultation.repository.ConsultationSessionRepository;
 import com.medisync.consultation.service.ConsultationRealtimePublisher;
+import com.medisync.consultation.service.VideoConsultationService;
 import com.medisync.department.entity.Department;
 import com.medisync.department.repository.DepartmentRepository;
 import com.medisync.exception.ResourceConflictException;
@@ -74,6 +75,7 @@ class PatientAppointmentServiceTest {
     @Mock ConsultationSessionRepository consultationRepository;
     @Mock ConsultationRealtimePublisher realtimePublisher;
     @Mock com.medisync.notification.service.NotificationService notificationService;
+    @Mock VideoConsultationService videoConsultationService;
 
     private PatientAppointmentService service;
     private Jwt jwt;
@@ -90,7 +92,7 @@ class PatientAppointmentServiceTest {
                 windowRepository, doctorProfileRepository, appUserRepository, hospitalRepository,
                 departmentRepository, specializationRepository, appointmentRepository, symptomsRepository,
                 responseMapper, new AppointmentProperties(0), consultationRepository, realtimePublisher,
-                Clock.systemUTC(), notificationService);
+                Clock.systemUTC(), notificationService, videoConsultationService);
         UUID patientAuth = UUID.randomUUID();
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(patientAuth.toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
@@ -159,7 +161,7 @@ class PatientAppointmentServiceTest {
                 windowRepository, doctorProfileRepository, appUserRepository, hospitalRepository,
                 departmentRepository, specializationRepository, appointmentRepository, symptomsRepository,
                 responseMapper, new AppointmentProperties(10), consultationRepository, realtimePublisher,
-                Clock.fixed(now.toInstant(), ZoneId.of("UTC")), notificationService);
+                Clock.fixed(now.toInstant(), ZoneId.of("UTC")), notificationService, videoConsultationService);
         allowPatientAndSlot();
 
         assertThatThrownBy(() -> service.create(jwt, request()))
@@ -236,6 +238,7 @@ class PatientAppointmentServiceTest {
         assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.CANCELLED_BY_PATIENT);
         assertThat(slot.getStatus()).isEqualTo(SlotStatus.AVAILABLE);
         assertThat(consultation.getStatus()).isEqualTo(ConsultationStatus.CANCELLED);
+        verify(videoConsultationService).markSessionEnded(consultation.getId());
     }
 
     @Test

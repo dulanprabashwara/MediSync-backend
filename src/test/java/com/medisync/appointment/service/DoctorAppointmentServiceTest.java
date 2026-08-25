@@ -11,6 +11,7 @@ import com.medisync.consultation.entity.ConsultationSession;
 import com.medisync.consultation.entity.ConsultationStatus;
 import com.medisync.consultation.repository.ConsultationSessionRepository;
 import com.medisync.consultation.service.ConsultationRealtimePublisher;
+import com.medisync.consultation.service.VideoConsultationService;
 import com.medisync.user.entity.AccountStatus;
 import com.medisync.user.entity.AppUser;
 import com.medisync.user.entity.DoctorProfile;
@@ -51,6 +52,7 @@ class DoctorAppointmentServiceTest {
     @Mock com.medisync.user.repository.AppUserRepository appUserRepository;
     @Mock com.medisync.notification.service.NotificationService notificationService;
     @Mock com.medisync.user.repository.PatientProfileRepository patientProfileRepository;
+    @Mock VideoConsultationService videoConsultationService;
 
     private DoctorAppointmentService service;
     private Jwt jwt;
@@ -62,7 +64,7 @@ class DoctorAppointmentServiceTest {
     @BeforeEach
     void setUp() {
         service = new DoctorAppointmentService(currentUserService, doctorProfileRepository, appointmentRepository,
-                slotRepository, responseMapper, consultationRepository, realtimePublisher, appUserRepository, notificationService, patientProfileRepository);
+                slotRepository, responseMapper, consultationRepository, realtimePublisher, appUserRepository, notificationService, patientProfileRepository, videoConsultationService);
         UUID authId = UUID.randomUUID();
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(authId.toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
@@ -155,6 +157,7 @@ class DoctorAppointmentServiceTest {
         assertThat(appointment.getCancelledAt()).isNotNull();
         assertThat(slot.getStatus()).isEqualTo(SlotStatus.AVAILABLE);
         assertThat(consultation.getStatus()).isEqualTo(ConsultationStatus.CANCELLED);
+        verify(videoConsultationService).markSessionEnded(consultation.getId());
     }
 
     @Test

@@ -24,17 +24,20 @@ public class ConsultationService {
     private final ConsultationClinicalNoteRepository clinicalNoteRepository;
     private final ConsultationRealtimePublisher realtimePublisher;
     private final PrescriptionRepository prescriptionRepository;
+    private final VideoConsultationService videoConsultationService;
 
     public ConsultationService(ConsultationAccessService accessService,
                                ConsultationResponseMapper responseMapper,
                                ConsultationClinicalNoteRepository clinicalNoteRepository,
                                ConsultationRealtimePublisher realtimePublisher,
-                               PrescriptionRepository prescriptionRepository) {
+                               PrescriptionRepository prescriptionRepository,
+                               VideoConsultationService videoConsultationService) {
         this.accessService = accessService;
         this.responseMapper = responseMapper;
         this.clinicalNoteRepository = clinicalNoteRepository;
         this.realtimePublisher = realtimePublisher;
         this.prescriptionRepository = prescriptionRepository;
+        this.videoConsultationService = videoConsultationService;
     }
 
     @Transactional
@@ -82,6 +85,7 @@ public class ConsultationService {
                     "Discard or issue the draft prescription before completing this consultation");
         }
         context.consultation().complete();
+        videoConsultationService.markSessionEnded(consultationId);
         realtimePublisher.publishAfterCommit(context.appointment(),
                 ConsultationEvent.statusChanged(consultationId, context.consultation().getStatus()));
         return responseMapper.toResponse(context);

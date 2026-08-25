@@ -4,8 +4,10 @@ import com.medisync.common.dto.PageResponse;
 import com.medisync.consultation.dto.ConsultationMessageResponse;
 import com.medisync.consultation.dto.ConsultationResponse;
 import com.medisync.consultation.dto.SendMessageRequest;
+import com.medisync.consultation.dto.VideoTokenResponse;
 import com.medisync.consultation.service.ConsultationChatService;
 import com.medisync.consultation.service.ConsultationService;
+import com.medisync.consultation.service.VideoConsultationService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -31,11 +33,14 @@ public class PatientConsultationController {
 
     private final ConsultationService consultationService;
     private final ConsultationChatService chatService;
+    private final VideoConsultationService videoService;
 
     public PatientConsultationController(ConsultationService consultationService,
-                                         ConsultationChatService chatService) {
+                                         ConsultationChatService chatService,
+                                         VideoConsultationService videoService) {
         this.consultationService = consultationService;
         this.chatService = chatService;
+        this.videoService = videoService;
     }
 
     @GetMapping("/{consultationId}")
@@ -79,5 +84,21 @@ public class PatientConsultationController {
             @PathVariable UUID consultationId,
             @PathVariable UUID messageId) {
         chatService.deletePatientMessage(jwt, consultationId, messageId);
+    }
+
+    // ── Video Consultation ──────────────────────────────────────────────
+
+    @PostMapping("/{consultationId}/video/join")
+    public VideoTokenResponse joinVideo(@AuthenticationPrincipal Jwt jwt,
+                                        @PathVariable UUID consultationId) {
+        return videoService.patientJoinVideo(jwt, consultationId);
+    }
+
+    @GetMapping("/{consultationId}/video/status")
+    public java.util.Map<String, Boolean> videoStatus(@AuthenticationPrincipal Jwt jwt,
+                                                      @PathVariable UUID consultationId) {
+        // Access check
+        consultationService.patientDetails(jwt, consultationId);
+        return java.util.Map.of("active", videoService.isVideoActive(consultationId));
     }
 }

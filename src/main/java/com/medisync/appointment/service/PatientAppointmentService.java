@@ -49,6 +49,7 @@ import java.util.UUID;
 
 import com.medisync.notification.service.NotificationService;
 import com.medisync.notification.NotificationType;
+import com.medisync.consultation.service.VideoConsultationService;
 
 @Service
 public class PatientAppointmentService {
@@ -72,6 +73,7 @@ public class PatientAppointmentService {
     private final ConsultationRealtimePublisher realtimePublisher;
     private final Clock clock;
     private final NotificationService notificationService;
+    private final VideoConsultationService videoConsultationService;
 
     public PatientAppointmentService(CurrentUserService currentUserService,
                                      PatientProfileRepository patientProfileRepository,
@@ -89,7 +91,8 @@ public class PatientAppointmentService {
                                      ConsultationSessionRepository consultationRepository,
                                      ConsultationRealtimePublisher realtimePublisher,
                                      Clock clock,
-                                     NotificationService notificationService) {
+                                     NotificationService notificationService,
+                                     VideoConsultationService videoConsultationService) {
         this.currentUserService = currentUserService;
         this.patientProfileRepository = patientProfileRepository;
         this.slotRepository = slotRepository;
@@ -107,6 +110,7 @@ public class PatientAppointmentService {
         this.realtimePublisher = realtimePublisher;
         this.clock = clock;
         this.notificationService = notificationService;
+        this.videoConsultationService = videoConsultationService;
     }
 
     @Transactional
@@ -209,6 +213,7 @@ public class PatientAppointmentService {
                 : null;
         if (consultation != null) {
             consultation.cancel();
+            videoConsultationService.markSessionEnded(consultation.getId());
         }
         appointment.cancelByPatient(request == null ? null : normalize(request.reason()));
         slot.release();

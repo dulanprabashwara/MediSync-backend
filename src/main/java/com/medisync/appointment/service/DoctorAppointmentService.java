@@ -43,6 +43,8 @@ import com.medisync.user.entity.PatientProfile;
 import com.medisync.user.repository.PatientProfileRepository;
 import java.time.format.DateTimeFormatter;
 
+import com.medisync.consultation.service.VideoConsultationService;
+
 @Service
 public class DoctorAppointmentService {
 
@@ -59,6 +61,7 @@ public class DoctorAppointmentService {
     private final AppUserRepository appUserRepository;
     private final NotificationService notificationService;
     private final PatientProfileRepository patientProfileRepository;
+    private final VideoConsultationService videoConsultationService;
 
     public DoctorAppointmentService(CurrentUserService currentUserService,
                                     DoctorProfileRepository doctorProfileRepository,
@@ -69,7 +72,8 @@ public class DoctorAppointmentService {
                                     ConsultationRealtimePublisher realtimePublisher,
                                     AppUserRepository appUserRepository,
                                     NotificationService notificationService,
-                                    PatientProfileRepository patientProfileRepository) {
+                                    PatientProfileRepository patientProfileRepository,
+                                    VideoConsultationService videoConsultationService) {
         this.currentUserService = currentUserService;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appointmentRepository = appointmentRepository;
@@ -80,6 +84,7 @@ public class DoctorAppointmentService {
         this.appUserRepository = appUserRepository;
         this.notificationService = notificationService;
         this.patientProfileRepository = patientProfileRepository;
+        this.videoConsultationService = videoConsultationService;
     }
 
     @Transactional(readOnly = true)
@@ -199,6 +204,7 @@ public class DoctorAppointmentService {
                 .orElse(null);
         if (consultation != null) {
             consultation.cancel();
+            videoConsultationService.markSessionEnded(consultation.getId());
         }
         appointment.cancelByDoctor(reason.trim());
         slot.release();
