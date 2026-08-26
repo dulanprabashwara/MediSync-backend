@@ -196,11 +196,7 @@ public class VideoConsultationService {
 
     private void requireInProgressAndTimeArrived(ConsultationContext ctx) {
         requireInProgress(ctx);
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        if (now.isBefore(ctx.appointment().getScheduledStart())) {
-            throw new ResourceConflictException(
-                    "The video call cannot be started before the scheduled consultation time.");
-        }
+        // Time check removed to allow doctors to start consultations early if needed
     }
 
     private void requireInProgress(ConsultationContext ctx) {

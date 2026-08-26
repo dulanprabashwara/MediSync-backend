@@ -41,6 +41,8 @@ import com.medisync.consultation.dto.ConsultationEvent;
 import com.medisync.consultation.service.ConsultationRealtimePublisher;
 import com.medisync.user.service.CurrentUserService;
 import com.medisync.user.entity.AppUser;
+import com.medisync.notification.service.NotificationService;
+import com.medisync.notification.NotificationType;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
@@ -63,6 +65,7 @@ public class PrescriptionService {
     private final CurrentUserService currentUserService;
     private final AuditService auditService;
     private final ConsultationRealtimePublisher realtimePublisher;
+    private final NotificationService notificationService;
 
     @Autowired
     public PrescriptionService(PrescriptionRepository prescriptionRepository,
@@ -78,7 +81,8 @@ public class PrescriptionService {
                                PrescriptionPaymentProperties paymentProperties,
                                CurrentUserService currentUserService,
                                AuditService auditService,
-                               ConsultationRealtimePublisher realtimePublisher) {
+                               ConsultationRealtimePublisher realtimePublisher,
+                               NotificationService notificationService) {
         this.prescriptionRepository = prescriptionRepository;
         this.itemRepository = itemRepository;
         this.tokenRepository = tokenRepository;
@@ -93,6 +97,7 @@ public class PrescriptionService {
         this.currentUserService = currentUserService;
         this.auditService = auditService;
         this.realtimePublisher = realtimePublisher;
+        this.notificationService = notificationService;
     }
 
     PrescriptionService(PrescriptionRepository prescriptionRepository,
@@ -107,7 +112,7 @@ public class PrescriptionService {
                         Clock clock) {
         this(prescriptionRepository, itemRepository, tokenRepository, dispensationRepository, accessService,
                 consultationAccessService, mapper, tokenGenerator, tokenHasher, clock,
-                new PrescriptionPaymentProperties("LKR"), null, null, null);
+                new PrescriptionPaymentProperties("LKR"), null, null, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -302,6 +307,22 @@ public class PrescriptionService {
                 Map.of("paymentStatus", access.prescription().getDoctorFeeStatus().name(), "feeRequired", true));
         realtimePublisher.publishAfterCommit(context.appointment(),
                 ConsultationEvent.paymentStatusChanged(access.prescription().getConsultationId()));
+        
+        if (notificationService != null) {
+            String doctorName = doctorUser.getFirstName() + " " + doctorUser.getLastName();
+            notificationService.createNotification(
+                    context.patientUser().getId(),
+                    doctorUser.getId(),
+                    NotificationType.PAYMENT_CONFIRMED,
+                    "Payment Confirmed",
+                    "Dr. " + doctorName + " has confirmed your consultation fee payment. You can now generate your prescription QR code.",
+                    "/patient/consultations/" + access.prescription().getConsultationId(),
+                    "PRESCRIPTION",
+                    prescriptionId,
+                    "payment-confirmed-" + prescriptionId
+            );
+        }
+        
         return mapper.toDoctorResponse(access.prescription());
     }
 

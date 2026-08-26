@@ -86,6 +86,13 @@ public class PatientConsultationController {
         chatService.deletePatientMessage(jwt, consultationId, messageId);
     }
 
+    @PostMapping("/{consultationId}/payment-sent")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void notifyPaymentSent(@AuthenticationPrincipal Jwt jwt,
+                                  @PathVariable UUID consultationId) {
+        consultationService.notifyPaymentSent(jwt, consultationId);
+    }
+
     // ── Video Consultation ──────────────────────────────────────────────
 
     @PostMapping("/{consultationId}/video/join")

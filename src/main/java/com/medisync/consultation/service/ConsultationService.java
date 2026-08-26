@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import com.medisync.notification.service.NotificationService;
+import com.medisync.notification.NotificationType;
 
 @Service
 public class ConsultationService {
@@ -25,19 +27,22 @@ public class ConsultationService {
     private final ConsultationRealtimePublisher realtimePublisher;
     private final PrescriptionRepository prescriptionRepository;
     private final VideoConsultationService videoConsultationService;
+    private final NotificationService notificationService;
 
     public ConsultationService(ConsultationAccessService accessService,
                                ConsultationResponseMapper responseMapper,
                                ConsultationClinicalNoteRepository clinicalNoteRepository,
                                ConsultationRealtimePublisher realtimePublisher,
                                PrescriptionRepository prescriptionRepository,
-                               VideoConsultationService videoConsultationService) {
+                               VideoConsultationService videoConsultationService,
+                               NotificationService notificationService) {
         this.accessService = accessService;
         this.responseMapper = responseMapper;
         this.clinicalNoteRepository = clinicalNoteRepository;
         this.realtimePublisher = realtimePublisher;
         this.prescriptionRepository = prescriptionRepository;
         this.videoConsultationService = videoConsultationService;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -89,6 +94,28 @@ public class ConsultationService {
         realtimePublisher.publishAfterCommit(context.appointment(),
                 ConsultationEvent.statusChanged(consultationId, context.consultation().getStatus()));
         return responseMapper.toResponse(context);
+    }
+
+    @Transactional
+    public void notifyPaymentSent(Jwt jwt, UUID consultationId) {
+        ConsultationAccessService.ConsultationContext context =
+                accessService.requirePatient(jwt, consultationId, false);
+                
+        String patientName = context.patientUser().getFirstName() + " " + context.patientUser().getLastName();
+        
+        if (notificationService != null) {
+            notificationService.createNotification(
+                    context.doctorUser().getId(),
+                    context.patientUser().getId(),
+                    NotificationType.NEW_CHAT_MESSAGE,
+                    "Payment Receipt Sent",
+                    "Patient " + patientName + " has indicated that they have sent the payment receipt in the chat.",
+                    "/doctor/consultations/" + consultationId,
+                    "CONSULTATION",
+                    consultationId,
+                    "payment-sent-" + consultationId + "-" + System.currentTimeMillis()
+            );
+        }
     }
 
     @Transactional(readOnly = true)
