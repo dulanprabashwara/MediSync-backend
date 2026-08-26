@@ -1,11 +1,41 @@
+# Build outputs
 target/
+*.class
+
+# IDE & Editor files
 .idea/
 .vscode/
 *.iml
+*.ipr
+*.iws
+
+# Environment variables
 .env
 .env.example
 .env.*
 !.env.example
 application-local.yml
 application-local.properties
+
+# Logs & JVM crash logs
 *.log
+hs_err_pid*.log
+replay_pid*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Agent, AI, Audit & Scratch files
+[Cc][Ll][Aa][Uu][Dd][Ee].md
+claude.md
+CLAUDE.md
+[Aa][Gg][Ee][Nn][Tt]*.md
+agent.md
+AGENTS.md
+audit.md
+audit.txt
+audit*.txt
+scratch/
+.scratch/
+temp/
