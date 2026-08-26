@@ -101,8 +101,8 @@ public class Appointment {
     }
 
     public void cancelByPatient(String reason) {
-        if (status != AppointmentStatus.REQUESTED && status != AppointmentStatus.CONFIRMED) {
-            throw new ResourceConflictException("This appointment can no longer be cancelled");
+        if (status != AppointmentStatus.REQUESTED) {
+            throw new ResourceConflictException("This appointment can no longer be cancelled because it has already been processed");
         }
         status = AppointmentStatus.CANCELLED_BY_PATIENT;
         cancellationReason = reason;

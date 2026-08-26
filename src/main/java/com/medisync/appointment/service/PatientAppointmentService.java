@@ -155,7 +155,8 @@ public class PatientAppointmentService {
         AppUser doctorUser = appUserRepository.findById(doctorProfile.getUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("Doctor user not found"));
                 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm")
+                .withZone(java.time.ZoneId.of("Asia/Colombo"));
         String formattedDateTime = slot.getStartsAt().format(formatter);
         String patientName = patientUser.getFirstName() + " " + patientUser.getLastName();
 
@@ -237,7 +238,8 @@ public class PatientAppointmentService {
         AppUser patientUser = appUserRepository.findById(patient.getUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("Patient user not found"));
                 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm")
+                .withZone(java.time.ZoneId.of("Asia/Colombo"));
         String formattedDateTime = appointment.getScheduledStart().format(formatter);
         String patientName = patientUser.getFirstName() + " " + patientUser.getLastName();
 

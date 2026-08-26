@@ -51,7 +51,7 @@ public class LiveKitTokenService {
                 new io.livekit.server.CanPublish(canPublish),
                 new io.livekit.server.CanSubscribe(true)
         );
-        token.setTtl(4 * 60 * 60 * 1000L); // 4 hours in ms
+        token.setTtl(4 * 60 * 60); // 4 hours in seconds
 
         return token.toJwt();
     }
