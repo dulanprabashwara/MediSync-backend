@@ -20,10 +20,15 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 
+import java.util.Set;
+
 @Component
 public class WebSocketAuthenticationInterceptor implements ChannelInterceptor {
 
-    private static final String CONSULTATION_EVENTS_DESTINATION = "/user/queue/consultation-events";
+    private static final Set<String> ALLOWED_DESTINATIONS = Set.of(
+            "/user/queue/consultation-events",
+            "/user/queue/notifications"
+    );
 
     private final JwtDecoder jwtDecoder;
     private final CurrentUserService currentUserService;
@@ -44,8 +49,10 @@ public class WebSocketAuthenticationInterceptor implements ChannelInterceptor {
             authenticate(accessor);
             return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
         } else if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+            String destination = accessor.getDestination();
             if (accessor.getUser() == null
-                    || !CONSULTATION_EVENTS_DESTINATION.equals(accessor.getDestination())) {
+                    || destination == null
+                    || !ALLOWED_DESTINATIONS.contains(destination)) {
                 throw new AccessDeniedException("WebSocket subscription is not allowed");
             }
         } else if (StompCommand.SEND.equals(accessor.getCommand())) {
@@ -75,8 +82,6 @@ public class WebSocketAuthenticationInterceptor implements ChannelInterceptor {
             if (doctor.getVerificationStatus() != VerificationStatus.VERIFIED) {
                 throw new AccessDeniedException("Only verified doctors can connect to consultation events");
             }
-        } else if (user.getRole() != UserRole.PATIENT) {
-            throw new AccessDeniedException("This role cannot connect to consultation events");
         }
         accessor.setUser(new JwtAuthenticationToken(jwt));
     }

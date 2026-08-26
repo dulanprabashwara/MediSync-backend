@@ -116,6 +116,11 @@ public class ConsultationService {
                     "payment-sent-" + consultationId + "-" + System.currentTimeMillis()
             );
         }
+        
+        if (realtimePublisher != null) {
+            realtimePublisher.publishAfterCommit(context.appointment(),
+                    ConsultationEvent.paymentStatusChanged(consultationId));
+        }
     }
 
     @Transactional(readOnly = true)

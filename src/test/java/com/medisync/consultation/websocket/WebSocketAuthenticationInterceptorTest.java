@@ -76,15 +76,16 @@ class WebSocketAuthenticationInterceptorTest {
     }
 
     @Test
-    void pharmacistCannotConnectToConsultationEvents() {
+    void activePharmacistCanConnectToRealtimeEvents() {
         AppUser pharmacist = new AppUser(UUID.fromString(jwt.getSubject()), "pharmacist@example.com", "Ravi", "F", null,
                 UserRole.PHARMACIST, AccountStatus.ACTIVE);
         when(jwtDecoder.decode("valid-token")).thenReturn(jwt);
         when(currentUserService.requireCurrentUser(jwt)).thenReturn(pharmacist);
 
-        assertThatThrownBy(() -> interceptor.preSend(
-                message(StompCommand.CONNECT, "Bearer valid-token"), null))
-                .isInstanceOf(AccessDeniedException.class);
+        Message<?> authenticated = interceptor.preSend(
+                message(StompCommand.CONNECT, "Bearer valid-token"), null);
+
+        assertThat(StompHeaderAccessor.wrap(authenticated).getUser()).isNotNull();
     }
 
     @Test
