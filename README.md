@@ -1,223 +1,466 @@
 # MediSync API
 
-Spring Boot API for the complete MediSync core workflow through Phase 5. MediSync connects patients with verified doctors for scheduled online consultations and carries an issued prescription through verified-pharmacist dispensing. The API owns application users, role authorization, professional verification, availability, booking, consultation lifecycle, persistent chat, private clinical notes, digital prescriptions, hashed QR verification, and dispensing records while Supabase Auth owns credentials and sessions.
+MediSync API is a Spring Boot 3.5 application providing backend REST endpoints, STOMP WebSockets, authentication integration, data persistence, and security controls for the MediSync digital healthcare platform.
 
-Backend tables, Java types, enums, and API routes retain the established `appointment` terminology. In Phase 2 these records represent scheduled online consultations, not physical hospital visits.
+The API acts as the authoritative backend service for patient discovery, doctor availability scheduling, appointment slot locking, consultation lifecycle management, persistent chat messaging, doctor-controlled LiveKit video token issuance, digital prescription hashing, manual payment confirmation, and single-use QR pharmacy dispensing. Authenticated identity and credentials are managed via Supabase Auth, while Spring Boot enforces role authorization, business rules, transactional concurrency, and relational persistence in PostgreSQL.
 
-## Requirements
+---
 
-- Java 17 or newer (Java 21 LTS is recommended for new development environments)
-- Maven 3.6.3 or newer
-- Access to the existing hosted Supabase PostgreSQL project
-- A Supabase project configured with asymmetric JWT signing keys so its JWKS endpoint can verify access tokens
+## Technology Stack
 
-## Configuration
+| Category | Technology / Library | Version | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Language** | Java | `17` | Standard LTS Java development environment |
+| **Framework** | Spring Boot | `3.5.7` | Framework for web services, security, REST APIs, and data access |
+| **Security** | Spring Security & OAuth2 Resource Server | `6.x` | Role-based authorization, request filtering, and Supabase JWKS JWT validation |
+| **Database** | PostgreSQL | `15+` | Relational storage for users, appointments, consultations, prescriptions, and audits |
+| **ORM / Data Access** | Spring Data JPA (Hibernate) | `3.x` | Entity mappings, repositories, pessimistic locking, and transactional queries |
+| **Schema Migration** | Flyway | `10.x` | Database schema versioning and incremental DDL migration scripts |
+| **Realtime WebSockets** | Spring WebSocket & STOMP Broker | `3.5.7` | Authenticated STOMP messaging over WebSockets for live chat and notifications |
+| **Video Infrastructure** | LiveKit Java Server SDK (`io.livekit:livekit-server`) | `0.15.0` | Server-side JWT token generation and WebRTC video room governance |
+| **Build & Test** | Maven & JUnit 5 / Mockito | `3.6.3+` | Build automation, dependency management, unit testing, and integration tests |
 
-Copy `.env.example` into your preferred local environment manager and provide the missing developer-owned values. Spring reads these variables directly; it does not load `.env` files by itself.
+---
 
-| Variable | Purpose |
-| --- | --- |
-| `DB_HOST` | Hosted PostgreSQL hostname |
-| `DB_PORT` | PostgreSQL port |
-| `DB_NAME` | Database name |
-| `DB_USERNAME` | Database user |
-| `DB_PASSWORD` | Database password (required; never commit it) |
-| `SUPABASE_URL` | Supabase project URL used to validate the JWT issuer |
-| `SUPABASE_JWKS_URL` | Supabase Auth JSON Web Key Set endpoint |
-| `SUPABASE_JWT_AUDIENCE` | Expected access-token audience, normally `authenticated` |
-| `FRONTEND_URL` | Exact allowed CORS origin |
-| `APPOINTMENT_MIN_LEAD_MINUTES` | Optional minimum lead time for a new booking; defaults to `0` |
+## Core Responsibilities
 
-## Run
+- **Identity & Role Enforcement**: Maps Supabase JWT subjects to database users and verifies permissions for `PATIENT`, `DOCTOR`, `PHARMACIST`, and `ADMIN` roles.
+- **Professional Licensing & Verification**: Processes registration profiles and license submissions for Doctors and Pharmacists, requiring explicit Administrator review before activation.
+- **Scheduling & Concurrency Locking**: Manages Doctor availability windows and slot reservations, enforcing pessimistic locking (`PESSIMISTIC_WRITE`) and database partial unique constraints to prevent double-booking.
+- **Consultation Session Governance**: Manages appointment state transitions (`REQUESTED` → `CONFIRMED` → `IN_PROGRESS` → `COMPLETED` / `CANCELLED`), securing consultation chat and Doctor private clinical notes.
+- **LiveKit Video Authorization**: Issues short-lived, role-aware LiveKit tokens strictly after scheduled start times, reserving call initiation to assigned Doctors.
+- **Prescription Lifecycle & Hashed QR**: Stores structured medication items and issues single-use prescription QR tokens. Tokens are stored exclusively as SHA-256 hashes.
+- **Payment Workflow Enforcement**: Tracks positive-fee prescription payments, supports receipt upload verification, and requires explicit Doctor payment confirmation before QR generation.
+- **Pharmacist Dispensing & Revocation**: Validates presented QR token hashes, displays safe medication details to verified Pharmacists, and executes single-use transactional dispensing.
+- **Transactional STOMP Notifications**: Publishes user-scoped notification events (`AFTER_COMMIT`) to ensure realtime alerts are dispatched only when database transactions succeed.
+- **Audit Logging & Governance**: Maintains append-only audit records for critical clinical and administrative events.
 
+---
+
+## System Architecture
+
+```mermaid
+flowchart LR
+    subgraph Clients["Frontend Clients"]
+        FE[Next.js App Router]
+    end
+
+    subgraph Auth["Authentication Provider"]
+        SUPA[Supabase Auth - JWKS Key Set]
+    end
+
+    subgraph Core["Spring Boot API Server"]
+        SEC[Spring Security & JWT Filter]
+        REST[REST Controllers]
+        SERVICE[Domain Business Services]
+        STOMP[STOMP WebSocket Controller]
+        LK_SDK[LiveKit Server SDK]
+    end
+
+    subgraph Infra["Infrastructure Services"]
+        DB[(PostgreSQL Database)]
+        LK_CLOUD[LiveKit Cloud - WebRTC]
+    end
+
+    FE -->|HTTP REST + Bearer JWT| SEC
+    FE <-->|STOMP WebSockets /ws| STOMP
+    SEC -->|Validate Signature via JWKS| SUPA
+    SEC --> REST
+    REST --> SERVICE
+    STOMP --> SERVICE
+    SERVICE -->|Pessimistic Lock & Transactions| DB
+    SERVICE -->|Issue Short-Lived Tokens| LK_SDK
+    FE <-->|WebRTC Media Stream| LK_CLOUD
+    LK_SDK -->|Server Controls| LK_CLOUD
+```
+
+---
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    actor Patient
+    participant API as Spring Boot API
+    participant DB as PostgreSQL DB
+    actor Doctor
+    participant LK as LiveKit Cloud
+    actor Pharmacist
+
+    Patient->>API: POST /api/patient/appointments (slotId, symptoms)
+    API->>DB: Lock patient & slot (PESSIMISTIC_WRITE)
+    DB-->>API: Slot reserved
+    API-->>Patient: Appointment REQUESTED
+    
+    Doctor->>API: POST /api/doctor/appointments/{id}/accept
+    API->>DB: Status -> CONFIRMED & slot -> BOOKED
+    API-->>Patient: Dispatch STOMP Notification
+    
+    Doctor->>API: POST /api/doctor/consultations/{id}/start
+    API->>DB: Session -> IN_PROGRESS & create VideoSession
+    API->>API: Issue Doctor LiveKit Token
+    API-->>Doctor: Return LiveKit Token
+    API-->>Patient: Dispatch VIDEO_CALL_STARTED Notification
+    
+    Patient->>API: GET /api/patient/consultations/{id}
+    API-->>Patient: Return Patient LiveKit Token
+    Doctor->>LK: Connect to WebRTC Room (Host)
+    Patient->>LK: Connect to WebRTC Room (Participant)
+    
+    Doctor->>API: POST /api/doctor/prescriptions/{id}/issue
+    API->>DB: Status -> ISSUED (Draft -> Final)
+    API-->>Patient: Dispatch PRESCRIPTION_ISSUED Notification
+    
+    Patient->>API: POST /api/patient/prescriptions/{id}/qr
+    API->>DB: Generate 256-bit token & save SHA-256 hash
+    API-->>Patient: Return raw token for client QR rendering
+    
+    Pharmacist->>API: POST /api/pharmacist/prescriptions/verify (qrPayload)
+    API->>DB: Calculate SHA-256 & lookup unrevoked token
+    API-->>Pharmacist: Return safe medication & patient details
+    
+    Pharmacist->>API: POST /api/pharmacist/prescriptions/dispense
+    API->>DB: Insert PrescriptionDispensation & revoke token
+    API-->>Patient: Dispatch DISPENSED Notification
+    API-->>Pharmacist: Dispensing complete confirmation
+```
+
+---
+
+## Domain Model & Entity Definitions
+
+| Entity | Package | Description | Key Relationships |
+| :--- | :--- | :--- | :--- |
+| `AppUser` | `com.medisync.user` | Core user identity, role (`PATIENT`, `DOCTOR`, `PHARMACIST`, `ADMIN`), and status | 1:1 with Role Profiles, 1:N with Notifications |
+| `PatientProfile` | `com.medisync.user` | Personal details, phone number, and emergency contact for patients | 1:1 with `AppUser`, 1:N with `Appointment` |
+| `DoctorProfile` | `com.medisync.doctor` | Professional licensing, bio, verification status, hospital, department, and specialty | 1:1 with `AppUser`, 1:N with `AppointmentSlot` |
+| `PharmacistProfile` | `com.medisync.pharmacy` | Pharmacy registration, license number, pharmacy name, and verification status | 1:1 with `AppUser`, 1:N with `PrescriptionDispensation` |
+| `Hospital` | `com.medisync.hospital` | Affiliated hospital or clinical institution | 1:N with `DoctorProfile` |
+| `Department` | `com.medisync.department` | Hospital medical department | 1:N with `DoctorProfile` |
+| `Specialization` | `com.medisync.specialization` | Doctor medical specialization | 1:N with `DoctorProfile` |
+| `DoctorAvailabilityWindow`| `com.medisync.availability` | Date-based availability schedule created by a doctor | 1:N with `AppointmentSlot` |
+| `AppointmentSlot` | `com.medisync.availability` | Individual 30-minute consultation time slot (`AVAILABLE`, `RESERVED`, `BOOKED`, `BLOCKED`) | N:1 with `DoctorAvailabilityWindow` |
+| `Appointment` | `com.medisync.appointment` | Consultation booking record (`REQUESTED`, `CONFIRMED`, `REJECTED`, `CANCELLED_*`) | 1:1 with `AppointmentSlot`, 1:1 with `Consultation` |
+| `Consultation` | `com.medisync.consultation` | Active online consultation session (`SCHEDULED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`) | 1:1 with `Appointment`, 1:N with `ConsultationMessage` |
+| `ConsultationMessage` | `com.medisync.consultation` | Persistent chat message supporting text and private media attachments | N:1 with `Consultation`, N:1 with `AppUser` (Sender) |
+| `ClinicalNote` | `com.medisync.consultation` | Doctor-private clinical observations and notes | 1:1 with `Consultation` |
+| `ConsultationVideoSession` | `com.medisync.consultation` | Active WebRTC video call metadata and session status | 1:1 with `Consultation` |
+| `Prescription` | `com.medisync.prescription` | Structured digital prescription (`DRAFT`, `ISSUED`, `CANCELLED`) | 1:1 with `Consultation`, 1:N with `PrescriptionItem` |
+| `PrescriptionItem` | `com.medisync.prescription` | Individual medication line item (name, dosage, frequency, duration, instructions) | N:1 with `Prescription` |
+| `PrescriptionDispensation` | `com.medisync.pharmacy` | Immutable record of prescription fulfillment at a pharmacy | 1:1 with `Prescription`, N:1 with `PharmacistProfile` |
+| `Notification` | `com.medisync.notification` | Persistent, user-scoped realtime notification alert | N:1 with `AppUser` |
+| `AuditLog` | `com.medisync.audit` | Append-only system audit entry for governance and compliance | N:1 with `AppUser` (Actor) |
+
+---
+
+## Database Relationship Diagram
+
+```mermaid
+erDiagram
+    APP_USER ||--o| PATIENT_PROFILE : has
+    APP_USER ||--o| DOCTOR_PROFILE : has
+    APP_USER ||--o| PHARMACIST_PROFILE : has
+    APP_USER ||--o{ NOTIFICATION : receives
+    APP_USER ||--o{ AUDIT_LOG : triggers
+
+    HOSPITAL ||--o{ DOCTOR_PROFILE : employs
+    DEPARTMENT ||--o{ DOCTOR_PROFILE : contains
+    SPECIALIZATION ||--o{ DOCTOR_PROFILE : categorizes
+
+    DOCTOR_PROFILE ||--o{ DOCTOR_AVAILABILITY_WINDOW : creates
+    DOCTOR_AVAILABILITY_WINDOW ||--o{ APPOINTMENT_SLOT : contains
+
+    PATIENT_PROFILE ||--o{ APPOINTMENT : requests
+    DOCTOR_PROFILE ||--o{ APPOINTMENT : receives
+    APPOINTMENT_SLOT ||--o| APPOINTMENT : reserves
+
+    APPOINTMENT ||--o| CONSULTATION : initiates
+    CONSULTATION ||--o{ CONSULTATION_MESSAGE : contains
+    CONSULTATION ||--o| CLINICAL_NOTE : records
+    CONSULTATION ||--o| CONSULTATION_VIDEO_SESSION : links
+    CONSULTATION ||--o| PRESCRIPTION : issues
+
+    PRESCRIPTION ||--|{ PRESCRIPTION_ITEM : specifies
+    PRESCRIPTION ||--o| PRESCRIPTION_DISPENSATION : fulfills
+    PHARMACIST_PROFILE ||--o{ PRESCRIPTION_DISPENSATION : dispenses
+```
+
+---
+
+## Authentication & Authorization
+
+MediSync uses a stateless JWT authentication strategy integrated with Supabase Auth:
+
+1. **JWKS Token Validation**: Spring Security's OAuth2 Resource Server validates incoming Bearer JWT tokens against Supabase's JSON Web Key Set (JWKS) URL (`/auth/v1/.well-known/jwks.json`).
+2. **User Synchronization**: Upon receiving a valid JWT, `UserController.getMe()` inspects the subject claim (`sub`). If no database user exists, an onboarding flag is returned. Onboarding transactionally initializes the `AppUser` and role profile.
+3. **Role Enforcement**: API routes and method security annotations (`@PreAuthorize`) enforce strict role permissions (`ROLE_PATIENT`, `ROLE_DOCTOR`, `ROLE_PHARMACIST`, `ROLE_ADMIN`).
+4. **Professional Verification Gate**: Doctors and Pharmacists remain in `PENDING_VERIFICATION` status until approved by an Administrator. Pending professionals are restricted from clinical features until activated.
+
+---
+
+## Doctor Availability & Appointment Booking Engine
+
+- **Availability Windows**: Doctors specify date-based availability windows. The API automatically generates 30-minute `AppointmentSlot` entities.
+- **Pessimistic Concurrency Locking**: When a patient books an appointment (`POST /api/patient/appointments`), the backend acquires `PESSIMISTIC_WRITE` locks on both the `PatientProfile` and the target `AppointmentSlot`.
+- **Double-Booking Protection**: In addition to pessimistic locking, a PostgreSQL partial unique index (`uk_appointments_active_slot`) prevents multiple active appointments (`REQUESTED` or `CONFIRMED`) on the same slot.
+- **Lead-Time Rules**: Slots must satisfy a configurable minimum lead time (`APPOINTMENT_MIN_LEAD_MINUTES`) relative to the server clock.
+
+---
+
+## Consultation Lifecycle & Persistent Chat
+
+1. **State Machine**:
+   - `SCHEDULED`: Created automatically upon Doctor accepting an appointment request.
+   - `IN_PROGRESS`: Triggered when the Doctor starts the video consultation.
+   - `COMPLETED`: Set when the Doctor completes the consultation.
+   - `CANCELLED`: Updated if an appointment is cancelled prior to starting.
+2. **Persistent Chat**:
+   - Patient and Doctor exchange messages via `GET/POST /api/{role}/consultations/{id}/messages`.
+   - Message payloads support up to 4,000 characters and up to 4 private image/receipt attachments.
+   - Attachments undergo content-type validation and magic-byte inspection. Private media files are served via short-lived pre-signed URLs.
+3. **Doctor Private Clinical Notes**:
+   - Doctors maintain private clinical notes via `GET/PUT /api/doctor/consultations/{id}/clinical-note`.
+   - Clinical notes are strictly isolated and never returned in Patient, Pharmacist, or STOMP payloads.
+
+---
+
+## LiveKit Video Consultation Backend
+
+- **Token Minting**: `VideoConsultationService` uses the LiveKit JVM SDK (`io.livekit:livekit-server`) to generate short-lived WebRTC join tokens.
+- **Start Restrictions**: Video rooms can only be created by the assigned Doctor after the scheduled start time.
+- **Patient Token Delivery**: Patients receive a join token only after the Doctor has successfully initiated the active video session.
+- **Room Isolation**: Each consultation maps to a unique, opaque LiveKit room identifier (`medisync-consultation-{id}`).
+
+---
+
+## Digital Prescription & QR Workflow
+
+1. **Drafting & Issuance**: Assigned Doctors draft prescriptions during active consultations. Issuance transitions the draft into an immutable `ISSUED` state.
+2. **Cryptographic Token Generation**: When a Patient requests a QR code (`POST /api/patient/prescriptions/{id}/qr`), the server generates a 256-bit `SecureRandom` token (`MEDISYNC:RX:<token>`).
+3. **SHA-256 Hash Storage**: The raw token is returned once to the Patient for rendering. PostgreSQL stores only the lowercase SHA-256 hash.
+4. **Token Invalidation**: Re-generating a QR code replaces the token hash, instantly invalidating previous QR codes.
+
+---
+
+## Payment Workflow Engine
+
+1. **External Payment Guidance**: For positive-fee consultations, Doctors provide bank transfer details.
+2. **Receipt Submission & Verification**: Patients upload payment receipt images via consultation chat.
+3. **Doctor Confirmation**: The Doctor calls `POST /api/doctor/prescriptions/{id}/confirm-payment`, updating payment status to `CONFIRMED`.
+4. **QR Unlocking**: Payment confirmation unlocks QR token generation for the Patient. Zero-fee prescriptions bypass payment confirmation (`NOT_REQUIRED`).
+
+---
+
+## Pharmacist QR Verification & Dispensing
+
+1. **Verification**: Pharmacists present the raw scanned QR payload to `POST /api/pharmacist/prescriptions/verify`. The API hashes the payload, queries the matching `token_hash`, and returns safe medication items without mutating state.
+2. **Transactional Dispensing**: Calling `POST /api/pharmacist/prescriptions/dispense` acquires a pessimistic write lock on the prescription:
+   - Validates that the prescription is not expired, cancelled, or already dispensed.
+   - Inserts an immutable `PrescriptionDispensation` record.
+   - Revokes the QR token hash permanently.
+   - Dispatches a `DISPENSED` notification event to the Patient.
+3. **Single-Use Constraint**: A database unique constraint on `prescription_id` in `prescription_dispensations` guarantees that no prescription can be dispensed more than once.
+
+---
+
+## Database Schema & Flyway Migrations
+
+Migrations execute automatically on application startup. Hibernate uses `ddl-auto=validate`.
+
+| Migration Script | Description |
+| :--- | :--- |
+| `V1__create_app_users.sql` | Base `app_users` table with email, identity subject, and account status |
+| `V2__create_role_profiles.sql` | `patient_profiles`, `doctor_profiles`, and `pharmacist_profiles` tables |
+| `V3__phase_2a_doctor_verification_foundation.sql` | `hospitals`, `departments`, `specializations`, and professional verification fields |
+| `V4__phase_2b_availability_and_appointments.sql` | `doctor_availability_windows`, `appointment_slots`, and `appointments` |
+| `V5__phase_3_online_consultations_and_chat.sql` | `consultations`, `consultation_messages`, and `clinical_notes` |
+| `V6__phase_4_digital_prescriptions_and_qr.sql` | `prescriptions`, `prescription_items`, and QR token metadata |
+| `V7__phase_4_security_and_availability_hardening.sql` | SHA-256 token hash migration and security indexes |
+| `V8__phase_5_pharmacist_verification_and_dispensing.sql` | `prescription_dispensations` table with unique constraints |
+| `V9__final_admin_media_payment_expansion.sql` | Admin user management, audit logs, media metadata, and manual payment fields |
+| `V10__account_deletion_and_anonymization.sql` | Support for account deletion and data anonymization |
+| `V11__add_deleted_status_to_constraint.sql` | Updates user status constraints to include `DELETED` |
+| `V12__doctor_payment_information.sql` | Doctor payment/banking information schema |
+| `V13__add_message_soft_delete.sql` | Soft-delete columns for consultation chat messages |
+| `V14__realtime_notifications.sql` | `notifications` schema with unread tracking |
+| `V15__video_consultations.sql` | `consultation_video_sessions` table for LiveKit WebRTC state |
+| `V16__fix_video_sessions.sql` | Refinement of video session constraints and indexes |
+
+---
+
+## Security & Privacy Safeguards
+
+- **No Hardcoded Secrets**: Credentials, database passwords, and API keys are injected via environment variables.
+- **Asymmetric JWT Verification**: Access tokens are validated against Supabase's public JWKS endpoint.
+- **Hashed QR Secrets**: Raw QR tokens are never persisted in the database; only SHA-256 hashes are stored.
+- **Strict Role Boundaries**: Pharmacists cannot access clinical notes or chat history; Patients cannot view Doctor private notes; Administrators cannot view clinical content or QR secrets.
+- **Magic-Byte Image Validation**: Uploaded media attachments undergo header byte inspection to prevent file spoofing.
+
+---
+
+## API Overview & Key Endpoints
+
+### Public & Health
+- `GET /api/health` — API health status check
+
+### Authentication & Users (`/api/users`)
+- `GET /api/users/me` — Retrieve authenticated user profile
+- `POST /api/users/onboarding` — Complete role onboarding (`PATIENT`, `DOCTOR`, `PHARMACIST`)
+
+### Doctor Availability & Appointments (`/api/doctor`)
+- `GET/POST /api/doctor/availability` — Manage availability windows and slots
+- `GET /api/doctor/appointments` — List received appointment requests
+- `POST /api/doctor/appointments/{id}/accept` — Accept appointment request
+- `POST /api/doctor/appointments/{id}/reject` — Reject appointment request
+
+### Patient Discovery & Booking (`/api/patient`)
+- `GET /api/patient/doctors` — Search active verified doctors
+- `GET /api/patient/doctors/{id}/slots` — View available doctor slots
+- `POST /api/patient/appointments` — Atomically reserve slot and submit symptoms
+
+### Consultations & Chat (`/api/patient` & `/api/doctor`)
+- `GET /api/{role}/consultations/{id}` — Retrieve consultation session
+- `GET/POST /api/{role}/consultations/{id}/messages` — Read or post chat messages
+- `POST /api/doctor/consultations/{id}/start` — Start LiveKit video consultation
+- `POST /api/doctor/consultations/{id}/complete` — Complete consultation
+- `GET/PUT /api/doctor/consultations/{id}/clinical-note` — Manage doctor private note
+
+### Prescriptions & QR (`/api/doctor` & `/api/patient`)
+- `POST /api/doctor/prescriptions/{id}/issue` — Issue digital prescription
+- `POST /api/doctor/prescriptions/{id}/confirm-payment` — Confirm patient payment receipt
+- `POST /api/patient/prescriptions/{id}/qr` — Generate single-use QR token
+
+### Pharmacist Verification & Dispensing (`/api/pharmacist`)
+- `POST /api/pharmacist/prescriptions/verify` — Verify scanned QR token hash
+- `POST /api/pharmacist/prescriptions/dispense` — Execute single-use dispensing transaction
+- `GET /api/pharmacist/dispensations` — View dispensing audit history
+
+### Admin Governance (`/api/admin`)
+- `GET /api/admin/users` — Paginated user directory with Ban/Unban capabilities
+- `GET/POST /api/admin/verifications` — Process Doctor and Pharmacist verification applications
+- `GET /api/admin/analytics/summary` — Aggregate platform metrics
+- `GET /api/admin/audit-logs` — Filterable system audit logs
+
+---
+
+## Project Structure
+
+```text
+d:/MediSync/backend/
+├── src/
+│   ├── main/
+│   │   ├── java/com/medisync/
+│   │   │   ├── admin/          # Admin governance & user management controllers
+│   │   │   ├── appointment/    # Booking management, status transitions, and locking
+│   │   │   ├── audit/          # Append-only system audit logging service
+│   │   │   ├── availability/   # Doctor availability windows and slot generation
+│   │   │   ├── common/         # Base entities, DTOs, and global constants
+│   │   │   ├── config/         # Security, WebSocket STOMP, and CORS configurations
+│   │   │   ├── consultation/   # Consultation sessions, chat, clinical notes, and video
+│   │   │   ├── department/     # Department reference data management
+│   │   │   ├── doctor/         # Doctor profiles and licensing services
+│   │   │   ├── exception/      # Global exception handling and error DTOs
+│   │   │   ├── hospital/       # Hospital reference data management
+│   │   │   ├── media/          # Private media upload, magic-byte check, & signed URLs
+│   │   │   ├── notification/   # STOMP notification event publisher and repository
+│   │   │   ├── pharmacy/       # Pharmacist profiles, QR verification, & dispensing
+│   │   │   ├── prescription/   # Digital prescription drafting, issuing, and QR hashing
+│   │   │   ├── security/       # Supabase JWT authentication filter and security context
+│   │   │   ├── specialization/ # Specialization reference data management
+│   │   │   └── user/           # User identity, profile controllers, and onboarding
+│   │   └── resources/
+│   │       ├── application.properties # Spring Boot configuration settings
+│   │       └── db/migration/   # Flyway incremental database migration scripts
+│   └── test/                   # Unit and integration tests (JUnit 5 & Mockito)
+├── pom.xml                     # Maven build specification and dependencies
+└── README.md                   # Backend documentation master file
+```
+
+---
+
+## Environment Variables
+
+Configure the following environment variables in your server execution environment:
+
+```env
+# Server Port
+PORT=8080
+
+# PostgreSQL Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=medisync_db
+DB_USERNAME=postgres
+DB_PASSWORD=your_secure_db_password_here
+
+# Supabase JWT Authentication Settings
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_JWKS_URL=https://your-project-id.supabase.co/auth/v1/.well-known/jwks.json
+SUPABASE_JWT_AUDIENCE=authenticated
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+
+# LiveKit WebRTC Video Configuration
+LIVEKIT_API_KEY=your_livekit_api_key_here
+LIVEKIT_API_SECRET=your_livekit_api_secret_here
+LIVEKIT_URL=wss://your-livekit-domain.livekit.cloud
+
+# CORS Allowed Origin
+FRONTEND_URL=http://localhost:3000
+
+# Optional Scheduling Rules
+APPOINTMENT_MIN_LEAD_MINUTES=0
+```
+
+> **Security Note**: Never commit actual database passwords, Supabase service-role keys, or LiveKit API secrets to source control.
+
+---
+
+## Installation & Running Locally
+
+### Prerequisites
+- **Java**: 17 LTS or newer
+- **Maven**: 3.6.3 or newer
+- **PostgreSQL**: 15+ database instance (or Supabase hosted PostgreSQL)
+
+### 1. Build Project
+```powershell
+cd D:\MediSync\backend
+mvn clean compile
+```
+
+### 2. Run Application
 ```powershell
 mvn spring-boot:run
 ```
+The API server listens on `http://localhost:8080`.
 
-The API listens on `http://localhost:8080`. The public readiness check is:
-
-```text
-GET http://localhost:8080/api/health
+### 3. Verify Health
+```powershell
+curl http://localhost:8080/api/health
 ```
+Expected output: `{"status":"UP"}`
 
-Authenticated requests must include `Authorization: Bearer <Supabase access token>`.
+---
 
-## Phase 1 API
-
-| Endpoint | Access | Purpose |
-| --- | --- | --- |
-| `GET /api/health` | Public | API status |
-| `GET /api/users/me` | Authenticated | Current MediSync profile, or `ONBOARDING_REQUIRED` |
-| `POST /api/users/onboarding` | Authenticated | Transactionally creates a user and role profile |
-| `GET /api/{role}/profile` | Matching database role | Verifies role-specific access |
-
-Public onboarding accepts only `PATIENT`, `DOCTOR`, and `PHARMACIST`. Patients become `ACTIVE`; doctors and pharmacists become `PENDING_VERIFICATION`. Pending professionals can open their own profile portal but the broader role route policy requires `ACTIVE`, ready for later clinical endpoints.
-
-## Phase 2B online consultation booking API
-
-| Endpoint | Access | Purpose |
-| --- | --- | --- |
-| `GET/POST /api/doctor/availability` | ACTIVE VERIFIED doctor | List or create a date-based window and generated slots |
-| `PATCH /api/doctor/availability/{id}/deactivate` | Owning doctor | Safely deactivate a future window |
-| `POST /api/doctor/availability/slots/{id}/block` | Owning doctor | Block an AVAILABLE slot |
-| `POST /api/doctor/availability/slots/{id}/unblock` | Owning doctor | Restore a BLOCKED slot in an active window |
-| `GET /api/patient/doctors` | ACTIVE patient | Paginated verified-doctor search |
-| `GET /api/patient/doctors/{id}` | ACTIVE patient | Patient-safe doctor profile |
-| `GET /api/patient/doctors/{id}/slots` | ACTIVE patient | AVAILABLE future slots in a maximum 31-day date range |
-| `POST /api/patient/appointments` | ACTIVE patient | Atomically request a slot and submit symptoms |
-| `GET /api/patient/appointments[/{id}]` | Owning patient | List or view own appointments |
-| `POST /api/patient/appointments/{id}/cancel` | Owning patient | Cancel an eligible request/confirmation |
-| `GET /api/doctor/appointments[/{id}]` | Assigned ACTIVE VERIFIED doctor | List or view assigned appointments |
-| `POST /api/doctor/appointments/{id}/accept` | Assigned doctor | REQUESTED → CONFIRMED and RESERVED → BOOKED |
-| `POST /api/doctor/appointments/{id}/reject` | Assigned doctor | Reject with a reason and release the slot |
-| `POST /api/doctor/appointments/{id}/cancel` | Assigned doctor | Cancel a future CONFIRMED appointment with a reason |
-
-Slot states are `AVAILABLE`, `RESERVED`, `BOOKED`, and `BLOCKED`. Appointment states are `REQUESTED`, `CONFIRMED`, `REJECTED`, `CANCELLED_BY_PATIENT`, and `CANCELLED_BY_DOCTOR`. The browser supplies only a `slotId`; the server derives the doctor and absolute timestamps from PostgreSQL.
-
-Booking locks the patient profile and selected slot with `PESSIMISTIC_WRITE`. The patient lock serializes overlapping-appointment checks, the slot lock serializes competing requests, and PostgreSQL's `uk_appointments_active_slot` partial unique index independently limits a slot to one `REQUESTED` or `CONFIRMED` appointment.
-
-## Phase 3 online consultation API
-
-| Endpoint | Access | Purpose |
-| --- | --- | --- |
-| `GET /api/patient/consultations/{id}` | Owning ACTIVE patient | Patient-safe consultation details and lifecycle status |
-| `GET/POST /api/patient/consultations/{id}/messages` | Owning ACTIVE patient | Paginated history or persistent plain-text message creation |
-| `GET /api/doctor/consultations/{id}` | Assigned ACTIVE VERIFIED doctor | Consultation details and lifecycle status |
-| `GET/POST /api/doctor/consultations/{id}/messages` | Assigned ACTIVE VERIFIED doctor | Paginated history or persistent plain-text message creation |
-| `POST /api/doctor/consultations/{id}/start` | Assigned ACTIVE VERIFIED doctor | `SCHEDULED` to `IN_PROGRESS` |
-| `POST /api/doctor/consultations/{id}/complete` | Assigned ACTIVE VERIFIED doctor | `IN_PROGRESS` to `COMPLETED` |
-| `GET/PUT /api/doctor/consultations/{id}/clinical-note` | Assigned ACTIVE VERIFIED doctor | Read or save the doctor's private note |
-| `STOMP /ws` | ACTIVE patient or ACTIVE VERIFIED doctor | Authenticated live consultation events |
-
-The consultation lifecycle is `SCHEDULED`, `IN_PROGRESS`, `COMPLETED`, or `CANCELLED`. Accepting an appointment transactionally ensures exactly one `SCHEDULED` session. Cancelling an eligible confirmed appointment also marks its scheduled session `CANCELLED`; cancellation is rejected once the session is in progress or completed. Completion does not change the Phase 2 appointment status.
-
-Chat is consultation-scoped and is never a generic patient-to-doctor channel. Messages are immutable, plain text, limited to 4,000 characters, and created and persisted through authenticated REST APIs. After the transaction commits, Spring publishes a STOMP event to each participant's authenticated `/user/queue/consultation-events` destination. REST history remains the source of truth, so reconnecting clients reconcile persisted history and a WebSocket outage cannot lose a successfully saved message. Chat remains writable after completion and becomes read-only after cancellation.
-
-The STOMP `CONNECT` frame carries the existing Supabase access token in its native `Authorization: Bearer ...` header. The token is never placed in the WebSocket URL. The same configured `JwtDecoder`, issuer, audience, and JWKS validation used by REST authenticate the connection. Only the consultation event user queue may be subscribed to, and client `SEND` frames are rejected because all writes go through REST authorization and persistence.
-
-Clinical notes use a separate doctor-only endpoint and response model. They are never included in patient consultation, message, or WebSocket payloads. The assigned doctor may edit the note while the session is scheduled or in progress; it becomes read-only after completion (and remains read-only for a cancelled session).
-
-## Phase 4 digital prescription API
-
-| Endpoint | Access | Purpose |
-| --- | --- | --- |
-| `GET /api/doctor/prescriptions[/{id}]` | Assigned ACTIVE VERIFIED doctor | Paginated history or prescription details |
-| `GET/POST /api/doctor/consultations/{id}/prescriptions` | Assigned ACTIVE VERIFIED doctor | Consultation history or create/return its single draft while scheduled/in progress |
-| `PUT /api/doctor/prescriptions/{id}` | Assigned doctor, writable DRAFT only | Save validity, instructions, and 0–20 structured medicines while scheduled/in progress |
-| `DELETE /api/doctor/prescriptions/{id}` | Assigned doctor, DRAFT only | Discard a draft and its items, including a legacy completed-consultation draft |
-| `POST /api/doctor/prescriptions/{id}/issue` | Assigned doctor, DRAFT only | Issue only while the consultation is `IN_PROGRESS` |
-| `POST /api/doctor/prescriptions/{id}/cancel` | Assigned doctor, ISSUED only | Cancel with a reason and revoke the QR token |
-| `GET /api/patient/prescriptions[/{id}]` | Owning ACTIVE patient | Read issued/cancelled prescriptions without returning a QR secret |
-| `POST /api/patient/prescriptions/{id}/qr` | Owning ACTIVE patient | Generate/rotate an eligible issued prescription QR on demand |
-
-Issued prescriptions are immutable. A consultation cannot be completed while it has an unresolved draft. Prescribing stops after completion, while consultation chat deliberately remains writable. Cancelled prescription responses retain cancellation metadata but omit medicine items and general instructions.
-
-QR payloads have the form `MEDISYNC:RX:<opaque-token>` and contain no identity or clinical data. The patient generates them on demand from a 256-bit `SecureRandom` token. PostgreSQL stores only the lowercase SHA-256 hash; the raw token is returned once and is neither persisted nor reconstructed by detail endpoints. Regeneration replaces the current hash and invalidates the previous QR. Phase 4 has no public or pharmacist verification endpoint.
-
-## Phase 5 pharmacist verification and dispensing API
-
-| Endpoint | Access | Purpose |
-| --- | --- | --- |
-| `GET/PUT /api/pharmacist/professional-profile` | Owning pending or active pharmacist | Read or update professional registration and pharmacy data |
-| `POST /api/pharmacist/professional-profile/submit-verification` | Owning pharmacist | Submit a complete profile for administrator review |
-| `GET /api/admin/pharmacists/pending` | ACTIVE admin | List submitted pharmacist profiles |
-| `GET /api/admin/pharmacists/{id}` | ACTIVE admin | Review one pharmacist submission |
-| `POST /api/admin/pharmacists/{id}/verify` | ACTIVE admin | Transactionally verify and activate the pharmacist |
-| `POST /api/admin/pharmacists/{id}/reject` | ACTIVE admin | Reject with required feedback |
-| `POST /api/pharmacist/prescriptions/verify` | ACTIVE VERIFIED pharmacist | Hash a POST-body QR token and return dispensing-safe prescription data without mutation |
-| `POST /api/pharmacist/prescriptions/dispense` | ACTIVE VERIFIED pharmacist | Reverify under locks, create the single dispensing record, and revoke the QR |
-| `GET /api/pharmacist/dispensations[/{id}]` | Owning ACTIVE VERIFIED pharmacist | Paginated own history or an owned immutable detail |
-
-Verification and dispensing accept only `qrPayload` in an authenticated POST body. They never accept a prescription, patient, doctor, or pharmacist ID as authority. The payload parser validates the `MEDISYNC:RX:` prefix and 256-bit URL-safe token format; the existing SHA-256 component derives `token_hash` for lookup. Unknown and rotated credentials receive a generic invalid response. A known dispensed credential returns only minimal fulfillment metadata.
-
-Dispensing is whole-prescription only. The transaction locks the QR-token row and prescription, rechecks token revocation/expiry and prescription state, rejects an existing dispensation, inserts one `prescription_dispensations` record, and revokes the QR. The database unique constraint on `prescription_id` independently prevents reuse. After dispensing, patient QR generation and doctor cancellation both return a conflict. Prescription status remains `DRAFT`, `ISSUED`, or `CANCELLED`; `DISPENSED` is derived from the fulfillment record.
-
-Pharmacy DTOs contain only patient display name, doctor professional identity, hospital/specialization, prescription dates, medicine instructions, and required fulfillment metadata. Symptoms, consultation reasons, chat, private clinical notes, authentication identifiers, raw tokens, and token hashes are never returned.
-
-Availability creation and normal availability APIs use the injectable server `Clock`: a window must start strictly in the future, fully expired windows and elapsed doctor slots are filtered without deleting history, patient slots must also satisfy the configured lead time, and booking rechecks that rule while holding the slot lock.
-
-## Database migrations
-
-Flyway runs migrations on application startup before Hibernate validates the schema. Hibernate uses `ddl-auto=validate`; it never creates or updates production tables. The migrations are incremental:
-
-- `V1__create_app_users.sql` and `V2__create_role_profiles.sql`: Phase 1 identity and role profiles
-- `V3__phase_2a_doctor_verification_foundation.sql`: Phase 2A professional reference data and doctor verification
-- `V4__phase_2b_availability_and_appointments.sql`: Phase 2B availability and online consultation booking
-- `V5__phase_3_online_consultations_and_chat.sql`: Phase 3 consultation sessions, persistent chat, and doctor-only clinical notes
-- `V6__phase_4_digital_prescriptions_and_qr.sql`: Phase 4 prescription lifecycle, ordered items, and opaque QR tokens
-- `V7__phase_4_security_and_availability_hardening.sql`: revokes legacy QR credentials, removes raw-token storage, and adds unique SHA-256 hash storage
-- `V8__phase_5_pharmacist_verification_and_dispensing.sql`: additively extends pharmacist verification and creates one-per-prescription dispensing records
-
-V5 additively creates `consultation_sessions`, `consultation_messages`, and `consultation_clinical_notes`, including lifecycle, ownership, content, and uniqueness constraints. It safely creates one `SCHEDULED` session for each existing `CONFIRMED` appointment that does not already have one, without changing the appointment. The first administrator is created only through the documented trusted bootstrap process in `docs/admin-bootstrap.md`.
-
-Do not run destructive Flyway repair/clean operations against the hosted project.
-
-## Product roadmap
-
-- Phase 1: authentication, roles, and security (complete)
-- Phase 2A: reference data, professional profiles, and administrator verification (complete)
-- Phase 2B: availability, doctor discovery, online consultation booking, symptom submission, and booking transitions (complete)
-- Phase 3: online consultation session, secure doctor-patient chat, private clinical notes, and consultation status (complete)
-- Phase 4: digital prescriptions, patient prescription view, and hashed on-demand QR support (complete)
-- Phase 5: pharmacist verification, QR scanning and verification, medicine dispensing, reuse prevention, and dispensing history (complete)
-
-MediSync core workflow:
-
-```text
-Patient consultation → issued prescription → patient generates QR
-        → verified pharmacist scans → Spring Boot hashes token
-        → PostgreSQL token_hash lookup → safe prescription review
-        → locked dispensing transaction → record created + QR revoked
-        → patient/doctor see Dispensed → pharmacist sees owned history
-```
-
-**MEDISYNC CORE PROJECT COMPLETE** after authenticated browser acceptance succeeds.
-
-Remote monitoring and formal follow-up scheduling are outside the core roadmap.
-
-## Test and package
+## Testing
 
 ```powershell
+# Run unit and security tests
 mvn test
+
+# Run full package verification
 mvn package
 ```
 
-Unit and MVC security tests do not require the production database. Running the full application requires `DB_PASSWORD` and network access to hosted PostgreSQL and the Supabase JWKS endpoint.
+---
 
-Use `docs/phase-2b-manual-verification.md` for the Phase 2 booking regression checklist and `docs/phase-3-manual-verification.md` for consultation lifecycle, live chat, ownership, clinical-note privacy, and post-completion checks.
-Use `docs/phase-5-manual-verification.md` for pharmacist verification, QR scanning, dispensing, single-use protection, derived status, and final core regression.
-# Final expansion (Flyway V9)
+## Companion Frontend Repository
 
-V9 adds full administrator user management, append-only audit events, private profile/chat media metadata,
-and manual doctor-fee confirmation before patient prescription QR generation. V1–V8 remain immutable.
+The frontend source code is located in the companion repository:  
+📁 [`D:\MediSync\frontend`](../frontend/README.md) — Next.js 16 App Router application with Tailwind CSS v4, STOMP WebSockets, and LiveKit video UI.
 
-## Private Supabase media setup
+---
 
-MediSync never exposes the Supabase service-role key to the browser. Before enabling image uploads:
+## License & Project Context
 
-1. In Supabase Storage, create a bucket named `medisync-private-media` and leave **Public bucket** disabled.
-2. Restrict the bucket to `image/jpeg`, `image/png`, and `image/webp`, with a 5 MB file-size limit.
-3. Set `SUPABASE_SERVICE_ROLE_KEY` only in the backend process environment. This must be the Supabase
-   `service_role` secret, not the publishable/anon key.
-4. Set `SUPABASE_STORAGE_BUCKET=medisync-private-media`. Signed URLs default to five minutes and can be adjusted
-   with `MEDIA_SIGNED_URL_SECONDS`.
-
-The backend validates both declared MIME type and file magic bytes, generates random storage paths,
-and returns short-lived signed URLs only to authorized users. A missing service-role key leaves all
-non-media functionality available and makes upload requests return `MEDIA_STORAGE_UNAVAILABLE`.
-
-## V9 administration APIs
-
-- `GET /api/admin/users` and `GET /api/admin/doctors` provide bounded, filterable pages.
-- `GET /api/admin/users/{id}`, `POST .../ban`, and `POST .../unban` manage account access with history.
-- `GET /api/admin/audit-logs` provides filtered, paginated, append-only operational events.
-- `GET /api/admin/analytics/summary`, `/timeseries`, and `/user-activity` use database aggregation.
-
-## Manual doctor fee workflow
-
-A doctor may set a non-negative fee while a prescription is a draft. Issuing a positive-fee prescription
-sets it to `AWAITING_CONFIRMATION`; only the assigned active verified doctor may call
-`POST /api/doctor/prescriptions/{id}/confirm-payment` during an in-progress or completed consultation.
-Expired, cancelled, or dispensed prescriptions cannot be confirmed. Patient QR creation remains blocked until
-confirmation. Zero-fee and pre-V9 prescriptions use
-`NOT_REQUIRED` for backward compatibility.
+MediSync API was engineered as a robust, enterprise-grade backend service for modern healthcare workflows. It enforces complete transactional integrity, cryptographic token hashing, strict role isolation, and real-time STOMP event dispatching.
