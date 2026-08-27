@@ -1,8 +1,10 @@
-# MediSync API
+# MediSync Backend
 
-MediSync API is a Spring Boot 3.5 application providing backend REST endpoints, STOMP WebSockets, authentication integration, data persistence, and security controls for the MediSync digital healthcare platform.
+MediSync is a full-stack healthcare workflow project for Patients, verified Doctors, verified Pharmacists, and Administrators. It brings discovery, scheduling, remote consultation, prescribing, external-payment confirmation, and pharmacy dispensing into one traceable workflow instead of spreading those steps across unrelated tools.
 
-The API acts as the authoritative backend service for patient discovery, doctor availability scheduling, appointment slot locking, consultation lifecycle management, persistent chat messaging, doctor-controlled LiveKit video token issuance, digital prescription hashing, manual payment confirmation, and single-use QR pharmacy dispensing. Authenticated identity and credentials are managed via Supabase Auth, while Spring Boot enforces role authorization, business rules, transactional concurrency, and relational persistence in PostgreSQL.
+This repository is the authoritative Spring Boot API. Supabase Auth supplies user identity; the backend derives the current user from the validated JWT and enforces account status, role, professional verification, ownership, lifecycle, and concurrency rules. Its technically interesting parts include transactional slot locking, database-backed chat and notifications, post-commit user-scoped STOMP delivery, doctor-governed LiveKit access, hashed single-use QR tokens, and whole-prescription dispensing.
+
+> MediSync is an engineering portfolio project, not a certified medical product or a claim of deployment in a hospital environment.
 
 ---
 
@@ -13,12 +15,12 @@ The API acts as the authoritative backend service for patient discovery, doctor 
 | **Language** | Java | `17` | Standard LTS Java development environment |
 | **Framework** | Spring Boot | `3.5.7` | Framework for web services, security, REST APIs, and data access |
 | **Security** | Spring Security & OAuth2 Resource Server | `6.x` | Role-based authorization, request filtering, and Supabase JWKS JWT validation |
-| **Database** | PostgreSQL | `15+` | Relational storage for users, appointments, consultations, prescriptions, and audits |
-| **ORM / Data Access** | Spring Data JPA (Hibernate) | `3.x` | Entity mappings, repositories, pessimistic locking, and transactional queries |
-| **Schema Migration** | Flyway | `10.x` | Database schema versioning and incremental DDL migration scripts |
+| **Database** | PostgreSQL | Managed driver | Relational storage for users, appointments, consultations, prescriptions, notifications, and audits |
+| **ORM / Data Access** | Spring Data JPA / Hibernate | Spring Boot managed | Entity mappings, repositories, pessimistic locking, and transactional queries |
+| **Schema Migration** | Flyway | Spring Boot managed | Versioned schema migrations (`V1` through `V16`) and startup validation |
 | **Realtime WebSockets** | Spring WebSocket & STOMP Broker | `3.5.7` | Authenticated STOMP messaging over WebSockets for live chat and notifications |
 | **Video Infrastructure** | LiveKit Java Server SDK (`io.livekit:livekit-server`) | `0.15.0` | Server-side JWT token generation and WebRTC video room governance |
-| **Build & Test** | Maven & JUnit 5 / Mockito | `3.6.3+` | Build automation, dependency management, unit testing, and integration tests |
+| **Build & Test** | Maven, JUnit 5, Mockito, Spring Security Test | Spring Boot managed | Build automation, unit tests, security tests, and integration tests |
 
 ---
 
@@ -34,6 +36,46 @@ The API acts as the authoritative backend service for patient discovery, doctor 
 - **Pharmacist Dispensing & Revocation**: Validates presented QR token hashes, displays safe medication details to verified Pharmacists, and executes single-use transactional dispensing.
 - **Transactional STOMP Notifications**: Publishes user-scoped notification events (`AFTER_COMMIT`) to ensure realtime alerts are dispatched only when database transactions succeed.
 - **Audit Logging & Governance**: Maintains append-only audit records for critical clinical and administrative events.
+
+---
+
+## Roles and Capabilities
+
+| Capability | Patient | Doctor | Pharmacist | Admin |
+| :--- | :---: | :---: | :---: | :---: |
+| Discover verified Doctors and view slots | Yes | — | — | — |
+| Book, view, or cancel an appointment | Yes | — | — | — |
+| Accept, reject, or cancel a request | — | Yes | — | — |
+| Start a consultation and LiveKit session | — | Yes | — | — |
+| Join an active LiveKit session | Yes | Yes | — | — |
+| Use persistent consultation chat | Yes | Yes | — | — |
+| Maintain private clinical notes | — | Yes | — | — |
+| Draft, issue, or cancel a prescription | — | Yes | — | — |
+| Mark external payment sent / confirm receipt | Yes | Yes | — | — |
+| Generate a prescription QR | Yes | — | — | — |
+| Verify and dispense a whole prescription | — | — | Yes | — |
+| Verify professionals and govern accounts | — | — | — | Yes |
+| View operational analytics and audit events | — | — | — | Yes |
+
+---
+
+## End-to-End Workflow
+
+```mermaid
+flowchart LR
+    P[Patient discovers Doctor] --> B[Books available slot]
+    B --> A[Doctor accepts]
+    A --> C[Consultation]
+    C --> V[Doctor starts video]
+    V --> J[Patient joins]
+    J --> RX[Doctor issues prescription]
+    RX --> F{Fee greater than zero?}
+    F -->|Yes| PAY[External payment sent and confirmed]
+    F -->|No| QR[QR unlocked]
+    PAY --> QR
+    QR --> VERIFY[Pharmacist verifies QR]
+    VERIFY --> DISPENSE[Whole prescription dispensed]
+```
 
 ---
 
@@ -76,53 +118,76 @@ flowchart LR
 
 ---
 
+## Notification Delivery Sequence
+
+```mermaid
+sequenceDiagram
+    participant S as Business Service
+    participant DB as PostgreSQL
+    participant E as Spring Event
+    participant WS as User-scoped STOMP
+    participant UI as Notification Bell / Toast
+
+    S->>DB: Save domain change and notification
+    S->>E: Publish NotificationCreatedEvent
+    DB-->>S: Commit transaction
+    E->>WS: AFTER_COMMIT delivery to authenticated user
+    WS-->>UI: /user/queue/notifications
+    UI->>UI: Update unread count and show toast
+```
+
+Notifications are persisted before delivery, can be read after reconnecting, and use a unique deduplication key where a business event must not create duplicate rows. Clients may subscribe only to the two allow-listed private user destinations; STOMP `SEND` is rejected because consultation writes go through secured REST services.
+
+---
+
 ## Sequence Diagram
 
 ```mermaid
 sequenceDiagram
     actor Patient
     participant API as Spring Boot API
-    participant DB as PostgreSQL DB
+    participant DB as PostgreSQL
     actor Doctor
     participant LK as LiveKit Cloud
     actor Pharmacist
 
-    Patient->>API: POST /api/patient/appointments (slotId, symptoms)
-    API->>DB: Lock patient & slot (PESSIMISTIC_WRITE)
-    DB-->>API: Slot reserved
-    API-->>Patient: Appointment REQUESTED
-    
+    Patient->>API: POST /api/patient/appointments
+    API->>DB: Lock Patient and slot; create REQUESTED booking
     Doctor->>API: POST /api/doctor/appointments/{id}/accept
-    API->>DB: Status -> CONFIRMED & slot -> BOOKED
-    API-->>Patient: Dispatch STOMP Notification
-    
+    API->>DB: Confirm booking and create scheduled consultation
+    API-->>Patient: User-scoped appointment notification
+
     Doctor->>API: POST /api/doctor/consultations/{id}/start
-    API->>DB: Session -> IN_PROGRESS & create VideoSession
-    API->>API: Issue Doctor LiveKit Token
-    API-->>Doctor: Return LiveKit Token
-    API-->>Patient: Dispatch VIDEO_CALL_STARTED Notification
-    
-    Patient->>API: GET /api/patient/consultations/{id}
-    API-->>Patient: Return Patient LiveKit Token
-    Doctor->>LK: Connect to WebRTC Room (Host)
-    Patient->>LK: Connect to WebRTC Room (Participant)
-    
+    API->>DB: Consultation becomes IN_PROGRESS
+    Doctor->>API: POST /api/doctor/consultations/{id}/video/start
+    API->>DB: Create one ACTIVE video session
+    API-->>Doctor: Short-lived LiveKit token and server URL
+    Doctor->>LK: Join opaque room
+    API-->>Patient: VIDEO_CALL_STARTED notification
+    Patient->>API: POST /api/patient/consultations/{id}/video/join
+    API-->>Patient: Short-lived LiveKit token and server URL
+    Patient->>LK: Join same opaque room
+
     Doctor->>API: POST /api/doctor/prescriptions/{id}/issue
-    API->>DB: Status -> ISSUED (Draft -> Final)
-    API-->>Patient: Dispatch PRESCRIPTION_ISSUED Notification
-    
+    API->>DB: Persist ISSUED prescription and items
+    alt Positive fee
+        Patient->>API: POST /api/patient/consultations/{id}/payment-sent
+        API-->>Doctor: PAYMENT_SENT notification
+        Doctor->>API: POST /api/doctor/prescriptions/{id}/confirm-payment
+        API->>DB: Mark payment CONFIRMED
+    else Zero fee
+        API->>DB: Payment NOT_REQUIRED
+    end
     Patient->>API: POST /api/patient/prescriptions/{id}/qr
-    API->>DB: Generate 256-bit token & save SHA-256 hash
-    API-->>Patient: Return raw token for client QR rendering
-    
-    Pharmacist->>API: POST /api/pharmacist/prescriptions/verify (qrPayload)
-    API->>DB: Calculate SHA-256 & lookup unrevoked token
-    API-->>Pharmacist: Return safe medication & patient details
-    
+    API->>DB: Store SHA-256 token hash
+    API-->>Patient: Return raw token once for QR rendering
+
+    Pharmacist->>API: POST /api/pharmacist/prescriptions/verify
+    API->>DB: Hash payload and find usable token
+    API-->>Pharmacist: Safe prescription view
     Pharmacist->>API: POST /api/pharmacist/prescriptions/dispense
-    API->>DB: Insert PrescriptionDispensation & revoke token
-    API-->>Patient: Dispatch DISPENSED Notification
-    API-->>Pharmacist: Dispensing complete confirmation
+    API->>DB: Lock, insert one dispensation, revoke token
+    API-->>Patient: DISPENSED notification
 ```
 
 ---
@@ -149,7 +214,7 @@ sequenceDiagram
 | `PrescriptionItem` | `com.medisync.prescription` | Individual medication line item (name, dosage, frequency, duration, instructions) | N:1 with `Prescription` |
 | `PrescriptionDispensation` | `com.medisync.pharmacy` | Immutable record of prescription fulfillment at a pharmacy | 1:1 with `Prescription`, N:1 with `PharmacistProfile` |
 | `Notification` | `com.medisync.notification` | Persistent, user-scoped realtime notification alert | N:1 with `AppUser` |
-| `AuditLog` | `com.medisync.audit` | Append-only system audit entry for governance and compliance | N:1 with `AppUser` (Actor) |
+| `AuditLog` | `com.medisync.audit` | Append-only operational audit entry for governance review | N:1 with `AppUser` (Actor) |
 
 ---
 
@@ -226,10 +291,13 @@ MediSync uses a stateless JWT authentication strategy integrated with Supabase A
 
 ## LiveKit Video Consultation Backend
 
-- **Token Minting**: `VideoConsultationService` uses the LiveKit JVM SDK (`io.livekit:livekit-server`) to generate short-lived WebRTC join tokens.
-- **Start Restrictions**: Video rooms can only be created by the assigned Doctor after the scheduled start time.
-- **Patient Token Delivery**: Patients receive a join token only after the Doctor has successfully initiated the active video session.
-- **Room Isolation**: Each consultation maps to a unique, opaque LiveKit room identifier (`medisync-consultation-{id}`).
+- **Doctor-governed start**: Only the assigned Doctor can create the session, only after the booked start time and after the consultation has entered `IN_PROGRESS`.
+- **Patient join gate**: The assigned Patient can obtain a join token only after an active Doctor-started session exists.
+- **Short-lived credentials**: `LiveKitTokenService` mints role-aware room tokens on the backend. The API key and secret belong only in backend environment configuration and are never client settings.
+- **Opaque media identity**: Room names and participant identities are random/opaque identifiers. Clinical details are not placed in LiveKit metadata.
+- **Separated responsibilities**: LiveKit carries live audio/video. MediSync chat remains a separate, persistent PostgreSQL/STOMP workflow.
+- **Lifecycle shutdown**: Consultation cancellation or completion marks the video session ended and schedules LiveKit room deletion after the surrounding transaction commits.
+- **No recording**: This project does not implement call recording or media storage.
 
 ---
 
@@ -244,10 +312,7 @@ MediSync uses a stateless JWT authentication strategy integrated with Supabase A
 
 ## Payment Workflow Engine
 
-1. **External Payment Guidance**: For positive-fee consultations, Doctors provide bank transfer details.
-2. **Receipt Submission & Verification**: Patients upload payment receipt images via consultation chat.
-3. **Doctor Confirmation**: The Doctor calls `POST /api/doctor/prescriptions/{id}/confirm-payment`, updating payment status to `CONFIRMED`.
-4. **QR Unlocking**: Payment confirmation unlocks QR token generation for the Patient. Zero-fee prescriptions bypass payment confirmation (`NOT_REQUIRED`).
+MediSync does not collect card details or settle money. For a positive fee, the prescription carries the Doctor's external payment instructions; the Patient pays outside MediSync, may attach a receipt in private consultation chat, and explicitly marks payment sent. The Doctor receives a realtime update and confirms receipt through `POST /api/doctor/prescriptions/{id}/confirm-payment`. Confirmation notifies the Patient and unlocks QR generation. A zero fee uses `NOT_REQUIRED` and needs no manual confirmation.
 
 ---
 
@@ -290,11 +355,27 @@ Migrations execute automatically on application startup. Hibernate uses `ddl-aut
 
 ## Security & Privacy Safeguards
 
-- **No Hardcoded Secrets**: Credentials, database passwords, and API keys are injected via environment variables.
-- **Asymmetric JWT Verification**: Access tokens are validated against Supabase's public JWKS endpoint.
+- **JWT verification**: Access tokens are validated against the configured Supabase issuer/JWKS, ES256 signature algorithm, and audience.
+- **Backend-derived authorization**: Services resolve the database user from the JWT subject rather than trusting client-supplied user or role identifiers.
+- **Role, status, verification, and ownership checks**: Spring Security route rules are reinforced by service-level access checks for the assigned Patient/Doctor and verified professional profiles.
+- **Private realtime destinations**: Authenticated STOMP clients may subscribe only to `/user/queue/consultation-events` and `/user/queue/notifications`; client `SEND` frames are rejected.
+- **Backend-only LiveKit authority**: The backend mints short-lived tokens for opaque rooms and identities. LiveKit secrets must remain server-side, and no clinical metadata is sent to the provider.
 - **Hashed QR Secrets**: Raw QR tokens are never persisted in the database; only SHA-256 hashes are stored.
-- **Strict Role Boundaries**: Pharmacists cannot access clinical notes or chat history; Patients cannot view Doctor private notes; Administrators cannot view clinical content or QR secrets.
-- **Magic-Byte Image Validation**: Uploaded media attachments undergo header byte inspection to prevent file spoofing.
+- **Clinical and admin boundaries**: Pharmacists cannot read chat or notes; Patients cannot read Doctor notes; Admin APIs expose governance/operational data rather than clinical content, payment account fields, or QR secrets.
+- **Private media**: Uploads are size/type/magic-byte checked, stored in a private Supabase bucket, and returned through short-lived signed URLs.
+- **Account enforcement**: Banned, pending, rejected, and deleted states are checked by the backend and WebSocket authentication layer.
+- **Secret handling requirement**: Database, Supabase service-role, and LiveKit credentials must be injected through the deployment environment and never exposed to the browser or committed to source control.
+
+---
+
+## Concurrency and Integrity
+
+- Booking locks the Patient and target slot with `PESSIMISTIC_WRITE`; a partial unique index also prevents two active appointments from owning one slot.
+- Availability and professional-profile update paths use pessimistic repository locks where concurrent state changes matter.
+- One active prescription draft per consultation is protected by a database index, while medicine positions are unique within a prescription.
+- QR generation replaces the prior token hash; verification hashes the submitted payload, and dispensing locks the prescription/token before inserting a unique dispensation and revoking the token.
+- The video table permits one session per consultation and one provider room name; creation handles a competing insert as a conflict rather than creating two rooms.
+- Notification deduplication uses a unique `dedupe_key`, and realtime publication occurs after the database transaction commits.
 
 ---
 
@@ -321,7 +402,10 @@ Migrations execute automatically on application startup. Hibernate uses `ddl-aut
 ### Consultations & Chat (`/api/patient` & `/api/doctor`)
 - `GET /api/{role}/consultations/{id}` — Retrieve consultation session
 - `GET/POST /api/{role}/consultations/{id}/messages` — Read or post chat messages
-- `POST /api/doctor/consultations/{id}/start` — Start LiveKit video consultation
+- `POST /api/doctor/consultations/{id}/start` — Move the consultation to `IN_PROGRESS`
+- `POST /api/doctor/consultations/{id}/video/start` — Create/reuse the active room and issue the Doctor token
+- `POST /api/patient/consultations/{id}/video/join` — Issue the Patient token after the Doctor starts video
+- `POST /api/patient/consultations/{id}/payment-sent` — Notify the Doctor of an external payment
 - `POST /api/doctor/consultations/{id}/complete` — Complete consultation
 - `GET/PUT /api/doctor/consultations/{id}/clinical-note` — Manage doctor private note
 
@@ -337,9 +421,15 @@ Migrations execute automatically on application startup. Hibernate uses `ddl-aut
 
 ### Admin Governance (`/api/admin`)
 - `GET /api/admin/users` — Paginated user directory with Ban/Unban capabilities
-- `GET/POST /api/admin/verifications` — Process Doctor and Pharmacist verification applications
+- `GET/POST /api/admin/doctors/**` — Review Doctor verification applications
+- `GET/POST /api/admin/pharmacists/**` — Review Pharmacist verification applications
 - `GET /api/admin/analytics/summary` — Aggregate platform metrics
 - `GET /api/admin/audit-logs` — Filterable system audit logs
+
+### Notifications (`/api/notifications`)
+- `GET /api/notifications` — Paginated authenticated-user notification history
+- `GET /api/notifications/unread-count` — Unread badge count
+- `PATCH /api/notifications/{id}/read` / `POST /api/notifications/read-all` — Read-state updates
 
 ---
 
@@ -369,7 +459,7 @@ d:/MediSync/backend/
 │   │   │   ├── specialization/ # Specialization reference data management
 │   │   │   └── user/           # User identity, profile controllers, and onboarding
 │   │   └── resources/
-│   │       ├── application.properties # Spring Boot configuration settings
+│   │       ├── application.yml        # Spring Boot configuration and environment bindings
 │   │       └── db/migration/   # Flyway incremental database migration scripts
 │   └── test/                   # Unit and integration tests (JUnit 5 & Mockito)
 ├── pom.xml                     # Maven build specification and dependencies
@@ -380,51 +470,44 @@ d:/MediSync/backend/
 
 ## Environment Variables
 
-Configure the following environment variables in your server execution environment:
+The current configuration reads the following environment variable names. Keep their values in a local untracked environment or deployment secret store.
 
 ```env
-# Server Port
-PORT=8080
-
-# PostgreSQL Database Configuration
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=medisync_db
-DB_USERNAME=postgres
-DB_PASSWORD=your_secure_db_password_here
-
-# Supabase JWT Authentication Settings
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_JWKS_URL=https://your-project-id.supabase.co/auth/v1/.well-known/jwks.json
-SUPABASE_JWT_AUDIENCE=authenticated
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
-
-# LiveKit WebRTC Video Configuration
-LIVEKIT_API_KEY=your_livekit_api_key_here
-LIVEKIT_API_SECRET=your_livekit_api_secret_here
-LIVEKIT_URL=wss://your-livekit-domain.livekit.cloud
-
-# CORS Allowed Origin
-FRONTEND_URL=http://localhost:3000
-
-# Optional Scheduling Rules
-APPOINTMENT_MIN_LEAD_MINUTES=0
+DB_HOST=
+DB_NAME=
+DB_USERNAME=
+DB_PASSWORD=
+SUPABASE_URL=
+SUPABASE_JWKS_URL=
+SUPABASE_JWT_AUDIENCE=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=
+FRONTEND_URL=
+APPOINTMENT_MIN_LEAD_MINUTES=
+MEDIA_SIGNED_URL_SECONDS=
+MEDIA_MAX_IMAGE_BYTES=
+DOCTOR_FEE_CURRENCY=
+LIVEKIT_URL=
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
 ```
 
-> **Security Note**: Never commit actual database passwords, Supabase service-role keys, or LiveKit API secrets to source control.
+`server.port` currently defaults to `8080`. The JDBC URL currently uses the configured host, database name, and a fixed pooler port; `DB_PORT` appears in `.env.example` but is not consumed by `application.yml`.
 
 ---
 
 ## Installation & Running Locally
 
 ### Prerequisites
-- **Java**: 17 LTS or newer
-- **Maven**: 3.6.3 or newer
-- **PostgreSQL**: 15+ database instance (or Supabase hosted PostgreSQL)
+- Java 17
+- Maven
+- A PostgreSQL database reachable by the configured JDBC settings
+- Supabase project values for Auth/JWKS and private media
+- LiveKit project values for video consultations
 
 ### 1. Build Project
 ```powershell
-cd D:\MediSync\backend
+cd MediSync-backend
 mvn clean compile
 ```
 
@@ -432,7 +515,7 @@ mvn clean compile
 ```powershell
 mvn spring-boot:run
 ```
-The API server listens on `http://localhost:8080`.
+The API server listens on `http://localhost:8080` with the checked-in configuration.
 
 ### 3. Verify Health
 ```powershell
@@ -454,13 +537,29 @@ mvn package
 
 ---
 
+## Known Limitations
+
+- Video is live-only: there is no recording, transcription, or stored media archive.
+- Payments occur externally; MediSync does not include an internal card gateway, refunds, or settlement processing.
+- Dispensing is whole-prescription and single-use; partial fills are not implemented.
+- Insurance, laboratory, and external electronic-health-record integrations are outside the current scope.
+- Supabase is required for authentication/private media and LiveKit Cloud is required for video.
+- The root-level analytics integration/debug tests require a configured external database and are not isolated unit tests.
+- The project has not been presented as formally certified for regulatory or clinical production use.
+
+## Future Improvements
+
+- Move external analytics checks into an explicit integration-test profile with disposable test data.
+- Add containerized local infrastructure and CI workflows for repeatable full-stack verification.
+- Add observability for REST, STOMP, Flyway, and LiveKit room lifecycle failures.
+- Expand accessibility and end-to-end browser coverage across all role workflows.
+
 ## Companion Frontend Repository
 
-The frontend source code is located in the companion repository:  
-📁 [`D:\MediSync\frontend`](../frontend/README.md) — Next.js 16 App Router application with Tailwind CSS v4, STOMP WebSockets, and LiveKit video UI.
+[MediSync Frontend](https://github.com/dulanprabashwara/Medisync-frontend) contains the Next.js App Router interface, STOMP client, LiveKit room UI, QR rendering/scanning, and role portals.
 
 ---
 
-## License & Project Context
+## Project Context
 
-MediSync API was engineered as a robust, enterprise-grade backend service for modern healthcare workflows. It enforces complete transactional integrity, cryptographic token hashing, strict role isolation, and real-time STOMP event dispatching.
+MediSync is a serious full-stack engineering and portfolio project demonstrating a connected healthcare workflow, relational modeling, authorization boundaries, realtime delivery, third-party media integration, and concurrency-aware service design. It is not represented as a real hospital deployment, regulatory certification, or substitute for clinical governance.
