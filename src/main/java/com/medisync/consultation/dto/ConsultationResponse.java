@@ -15,6 +15,7 @@ public record ConsultationResponse(
         String cancellationReason,
         String patientName,
         String doctorName,
+        String doctorPhone,
         String hospitalName,
         String departmentName,
         String specializationName,

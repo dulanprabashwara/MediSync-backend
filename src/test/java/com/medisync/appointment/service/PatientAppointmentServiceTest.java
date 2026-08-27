@@ -290,7 +290,7 @@ class PatientAppointmentServiceTest {
     }
 
     private CreateAppointmentRequest request() {
-        return new CreateAppointmentRequest(slot.getId(), " Persistent fever ", "Fever and headache",
+        return new CreateAppointmentRequest(slot.getId(), 34, " Persistent fever ", "Fever and headache",
                 "3 days", "Temperature was elevated");
     }
 

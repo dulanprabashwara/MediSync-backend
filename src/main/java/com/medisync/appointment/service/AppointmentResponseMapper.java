@@ -75,6 +75,7 @@ public class AppointmentResponseMapper {
 
         return new AppointmentResponse(
                 appointment.getId(), appointment.getSlotId(), fullName(patientUser), "Dr. " + fullName(doctorUser),
+                doctorUser.getPhone(),
                 hospital.getName(), department.getName(), specialization.getName(), appointment.getScheduledStart(),
                 appointment.getScheduledEnd(), appointment.getStatus(), AppointmentSymptomsResponse.from(symptoms),
                 appointment.getDoctorRejectionReason(), appointment.getCancellationReason(), appointment.getCreatedAt(),

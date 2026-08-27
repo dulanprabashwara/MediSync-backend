@@ -21,6 +21,9 @@ public class AppointmentSymptoms {
     @Column(name = "appointment_id", nullable = false, unique = true)
     private UUID appointmentId;
 
+    @Column(name = "patient_age")
+    private Integer patientAge;
+
     @Column(name = "reason_for_visit", nullable = false, length = 300)
     private String reasonForVisit;
 
@@ -42,10 +45,11 @@ public class AppointmentSymptoms {
     protected AppointmentSymptoms() {
     }
 
-    public AppointmentSymptoms(UUID appointmentId, String reasonForVisit, String symptoms,
+    public AppointmentSymptoms(UUID appointmentId, Integer patientAge, String reasonForVisit, String symptoms,
                                String symptomDuration, String additionalNotes) {
         this.id = UUID.randomUUID();
         this.appointmentId = appointmentId;
+        this.patientAge = patientAge;
         this.reasonForVisit = reasonForVisit;
         this.symptoms = symptoms;
         this.symptomDuration = symptomDuration;
@@ -66,6 +70,7 @@ public class AppointmentSymptoms {
 
     public UUID getId() { return id; }
     public UUID getAppointmentId() { return appointmentId; }
+    public Integer getPatientAge() { return patientAge; }
     public String getReasonForVisit() { return reasonForVisit; }
     public String getSymptoms() { return symptoms; }
     public String getSymptomDuration() { return symptomDuration; }

@@ -145,7 +145,7 @@ public class PatientAppointmentService {
 
         Appointment appointment = appointmentRepository.save(new Appointment(patient.getId(), slot.getDoctorId(),
                 slot.getId(), slot.getStartsAt(), slot.getEndsAt()));
-        symptomsRepository.save(new AppointmentSymptoms(appointment.getId(), request.reasonForVisit().trim(),
+        symptomsRepository.save(new AppointmentSymptoms(appointment.getId(), request.patientAge(), request.reasonForVisit().trim(),
                 request.symptoms().trim(), normalize(request.symptomDuration()), normalize(request.additionalNotes())));
         slot.reserve();
 

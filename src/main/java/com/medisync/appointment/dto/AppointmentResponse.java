@@ -11,6 +11,7 @@ public record AppointmentResponse(
         UUID slotId,
         String patientName,
         String doctorName,
+        String doctorPhone,
         String hospitalName,
         String departmentName,
         String specializationName,

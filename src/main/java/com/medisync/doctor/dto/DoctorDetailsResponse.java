@@ -5,6 +5,7 @@ import java.util.UUID;
 public record DoctorDetailsResponse(
         UUID doctorProfileId,
         String displayName,
+        String phone,
         UUID hospitalId,
         String hospitalName,
         UUID departmentId,

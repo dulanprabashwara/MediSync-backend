@@ -75,6 +75,7 @@ public class ConsultationResponseMapper {
                 context.appointment().getCancellationReason(),
                 fullName(context.patientUser()),
                 "Dr. " + fullName(context.doctorUser()),
+                context.doctorUser().getPhone(),
                 hospital.getName(),
                 department.getName(),
                 specialization.getName(),

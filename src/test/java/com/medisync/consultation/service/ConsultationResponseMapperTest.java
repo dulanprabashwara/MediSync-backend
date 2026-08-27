@@ -109,7 +109,7 @@ class ConsultationResponseMapperTest {
         consultation.cancel();
 
         AppointmentSymptoms symptoms = new AppointmentSymptoms(
-                appointment.getId(), "Follow-up", "Headache", "Two days", null);
+                appointment.getId(), 34, "Follow-up", "Headache", "Two days", null);
         when(hospitalRepository.findById(hospital.getId())).thenReturn(Optional.of(hospital));
         when(departmentRepository.findById(department.getId())).thenReturn(Optional.of(department));
         when(specializationRepository.findById(specialization.getId())).thenReturn(Optional.of(specialization));

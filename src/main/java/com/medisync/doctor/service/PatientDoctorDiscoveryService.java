@@ -171,7 +171,7 @@ public class PatientDoctorDiscoveryService {
         Specialization specialization = requireSpecialization(doctor);
         String bio = doctor.getBio();
         String summary = bio == null || bio.length() <= 240 ? bio : bio.substring(0, 237) + "...";
-        return new DoctorSummaryResponse(doctor.getId(), displayName(user), hospital.getId(), hospital.getName(),
+        return new DoctorSummaryResponse(doctor.getId(), displayName(user), user.getPhone(), hospital.getId(), hospital.getName(),
                 department.getId(), department.getName(), specialization.getId(), specialization.getName(),
                 doctor.getQualifications(), doctor.getYearsOfExperience(), summary,
                 mediaUrlService == null ? null : mediaUrlService.signedUrlOrNull(user.getProfileImageKey()), true);
@@ -182,7 +182,7 @@ public class PatientDoctorDiscoveryService {
         Hospital hospital = requireHospital(doctor);
         Department department = requireDepartment(doctor);
         Specialization specialization = requireSpecialization(doctor);
-        return new DoctorDetailsResponse(doctor.getId(), displayName(user), hospital.getId(), hospital.getName(),
+        return new DoctorDetailsResponse(doctor.getId(), displayName(user), user.getPhone(), hospital.getId(), hospital.getName(),
                 department.getId(), department.getName(), specialization.getId(), specialization.getName(),
                 doctor.getQualifications(), doctor.getYearsOfExperience(), doctor.getBio(),
                 mediaUrlService == null ? null : mediaUrlService.signedUrlOrNull(user.getProfileImageKey()), true);
