@@ -72,7 +72,8 @@ class PrescriptionServiceTest {
         service = new PrescriptionService(prescriptionRepository, itemRepository, tokenRepository,
                 dispensationRepository, accessService, consultationAccessService, mapper, tokenGenerator,
                 tokenHasher, Clock.fixed(now.toInstant(), ZoneId.of("UTC")),
-                new PrescriptionPaymentProperties("LKR"), currentUserService, auditService, realtimePublisher);
+                new PrescriptionPaymentProperties("LKR"), currentUserService, auditService, realtimePublisher,
+                null);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(UUID.randomUUID().toString())
                 .issuedAt(now.toInstant()).expiresAt(now.plusMinutes(5).toInstant()).build();
     }
