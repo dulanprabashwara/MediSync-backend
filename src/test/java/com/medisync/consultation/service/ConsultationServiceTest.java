@@ -7,6 +7,7 @@ import com.medisync.consultation.entity.ConsultationSession;
 import com.medisync.consultation.entity.ConsultationStatus;
 import com.medisync.consultation.repository.ConsultationClinicalNoteRepository;
 import com.medisync.exception.ResourceConflictException;
+import com.medisync.notification.service.NotificationService;
 import com.medisync.prescription.repository.PrescriptionRepository;
 import com.medisync.user.entity.AccountStatus;
 import com.medisync.user.entity.AppUser;
@@ -40,6 +41,7 @@ class ConsultationServiceTest {
     @Mock ConsultationRealtimePublisher realtimePublisher;
     @Mock PrescriptionRepository prescriptionRepository;
     @Mock VideoConsultationService videoConsultationService;
+    @Mock NotificationService notificationService;
 
     private ConsultationService service;
     private Jwt jwt;
@@ -48,7 +50,7 @@ class ConsultationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ConsultationService(accessService, responseMapper, noteRepository, realtimePublisher,
-                prescriptionRepository, videoConsultationService);
+                prescriptionRepository, videoConsultationService, notificationService);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject(UUID.randomUUID().toString())
                 .issuedAt(java.time.Instant.now()).expiresAt(java.time.Instant.now().plusSeconds(300)).build();
         context = scheduledContext();
