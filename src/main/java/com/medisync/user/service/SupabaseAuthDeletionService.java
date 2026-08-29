@@ -31,8 +31,7 @@ public class SupabaseAuthDeletionService {
 
     public void deleteSupabaseAuthUser(UUID authUserId) {
         if (serviceRoleKey == null || serviceRoleKey.isBlank()) {
-            log.warn("Cannot delete Supabase Auth identity for {}: service role key is not configured", authUserId);
-            return;
+            throw new IllegalStateException("Supabase Auth deletion is not configured");
         }
 
         try {
@@ -44,13 +43,13 @@ public class SupabaseAuthDeletionService {
 
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.DELETE, request, String.class);
             
-            if (response.getStatusCode().is2xxSuccessful()) {
-                log.info("Successfully deleted Supabase Auth identity for {}", authUserId);
-            } else {
-                log.warn("Supabase Auth deletion returned unexpected status {}: {}", response.getStatusCode(), response.getBody());
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new IllegalStateException("Supabase Auth deletion returned status " + response.getStatusCode());
             }
+            log.info("Successfully deleted Supabase Auth identity for {}", authUserId);
         } catch (Exception e) {
             log.error("Failed to delete Supabase Auth identity for {}: {}", authUserId, e.getMessage());
+            throw new IllegalStateException("The authentication identity could not be deleted", e);
         }
     }
 }

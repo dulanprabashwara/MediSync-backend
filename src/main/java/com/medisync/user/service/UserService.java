@@ -8,6 +8,7 @@ import com.medisync.user.entity.DoctorProfile;
 import com.medisync.user.entity.PatientProfile;
 import com.medisync.user.entity.PharmacistProfile;
 import com.medisync.user.entity.UserRole;
+import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.exception.DuplicateOnboardingException;
 import com.medisync.user.exception.InvalidAuthenticatedUserException;
 import com.medisync.user.exception.InvalidOnboardingRoleException;
@@ -70,7 +71,8 @@ public class UserService {
         UUID authUserId = authenticatedUserId(jwt);
         return appUserRepository.findByAuthUserId(authUserId)
                 .map(user -> UserResponse.from(user, mediaUrlService == null
-                        ? null : mediaUrlService.signedUrlOrNull(user.getProfileImageKey())))
+                                ? null : mediaUrlService.signedUrlOrNull(user.getProfileImageKey()),
+                        professionalVerificationStatus(user)))
                 .orElseThrow(OnboardingRequiredException::new);
     }
 
@@ -98,7 +100,8 @@ public class UserService {
 
         AppUser savedUser = appUserRepository.saveAndFlush(user);
         return UserResponse.from(savedUser, mediaUrlService == null
-                ? null : mediaUrlService.signedUrlOrNull(savedUser.getProfileImageKey()));
+                        ? null : mediaUrlService.signedUrlOrNull(savedUser.getProfileImageKey()),
+                professionalVerificationStatus(savedUser));
     }
 
     @Transactional
@@ -130,7 +133,7 @@ public class UserService {
         createRoleProfile(savedUser);
 
         log.info("User onboarding completed for role {}", savedUser.getRole());
-        return UserResponse.from(savedUser, null);
+        return UserResponse.from(savedUser, null, professionalVerificationStatus(savedUser));
     }
 
     private void createRoleProfile(AppUser user) {
@@ -140,6 +143,18 @@ public class UserService {
             case PHARMACIST -> pharmacistProfileRepository.save(new PharmacistProfile(user.getId()));
             case ADMIN -> throw new InvalidOnboardingRoleException();
         }
+    }
+
+    private VerificationStatus professionalVerificationStatus(AppUser user) {
+        return switch (user.getRole()) {
+            case DOCTOR -> doctorProfileRepository.findByUserId(user.getId())
+                    .map(DoctorProfile::getVerificationStatus)
+                    .orElse(VerificationStatus.PENDING);
+            case PHARMACIST -> pharmacistProfileRepository.findByUserId(user.getId())
+                    .map(PharmacistProfile::getVerificationStatus)
+                    .orElse(VerificationStatus.PENDING);
+            case PATIENT, ADMIN -> null;
+        };
     }
 
     private UUID authenticatedUserId(Jwt jwt) {

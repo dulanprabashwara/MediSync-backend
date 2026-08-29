@@ -137,11 +137,9 @@ public class UserDeletionService {
                 "role", deletedRole
         ));
 
-        try {
-            authDeletionService.deleteSupabaseAuthUser(authUserId);
-        } catch (Exception e) {
-            log.error("Failed to delete Supabase Auth identity for user {}: {}", targetId, e.getMessage());
-        }
+        // Do not commit an application-level deletion while the login identity
+        // remains active. Propagating a failure rolls this transaction back.
+        authDeletionService.deleteSupabaseAuthUser(authUserId);
 
         log.info("Successfully deleted user account {} via {}", targetId, source);
     }

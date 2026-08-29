@@ -5,6 +5,7 @@ import com.medisync.user.dto.UserResponse;
 import com.medisync.user.entity.AccountStatus;
 import com.medisync.user.entity.AppUser;
 import com.medisync.user.entity.UserRole;
+import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.exception.DuplicateOnboardingException;
 import com.medisync.user.exception.InvalidOnboardingRoleException;
 import com.medisync.user.repository.AppUserRepository;
@@ -61,6 +62,7 @@ class UserServiceTest {
         UserResponse response = userService.onboard(jwt, request(UserRole.PATIENT));
 
         assertThat(response.status()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(response.professionalVerificationStatus()).isNull();
         assertThat(response.email()).isEqualTo("person@example.com");
         verify(patientProfileRepository).save(any());
         verify(doctorProfileRepository, never()).save(any());
@@ -73,6 +75,7 @@ class UserServiceTest {
         UserResponse response = userService.onboard(jwt, request(role));
 
         assertThat(response.status()).isEqualTo(AccountStatus.PENDING_VERIFICATION);
+        assertThat(response.professionalVerificationStatus()).isEqualTo(VerificationStatus.PENDING);
         if (role == UserRole.DOCTOR) {
             verify(doctorProfileRepository).save(any());
         } else {
