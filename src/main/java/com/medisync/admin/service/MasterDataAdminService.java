@@ -137,22 +137,29 @@ public class MasterDataAdminService {
     @Transactional(readOnly = true)
     public List<SpecializationResponse> specializations(Jwt jwt) {
         requireAdmin(jwt);
+        Map<UUID, Department> departments = departmentRepository.findAll().stream()
+                .collect(Collectors.toMap(Department::getId, Function.identity()));
+        Map<UUID, Hospital> hospitals = hospitalRepository.findAll().stream()
+                .collect(Collectors.toMap(Hospital::getId, Function.identity()));
         return specializationRepository.findAllByOrderByNameAsc().stream()
-                .map(specialization -> SpecializationResponse.from(specialization,
-                        doctorCountBySpecialization(specialization.getId())))
+                .map(specialization -> specializationResponse(specialization, departments, hospitals))
                 .toList();
     }
 
     @Transactional
     public SpecializationResponse createSpecialization(Jwt jwt, SpecializationRequest request) {
         requireAdmin(jwt);
+        Hospital hospital = requireHospital(request.hospitalId());
+        Department department = requireDepartment(request.departmentId());
+        requireDepartmentBelongsToHospital(department, hospital);
         String name = request.name().trim();
-        if (specializationRepository.existsByNameIgnoreCase(name)) {
-            throw new ResourceConflictException("A specialization with this name already exists");
+        if (specializationRepository.existsByDepartmentIdAndNameIgnoreCase(department.getId(), name)) {
+            throw new ResourceConflictException("This department already has a specialization with that name");
         }
-        Specialization specialization = new Specialization(name, optional(request.description()),
+        Specialization specialization = new Specialization(department.getId(), name, optional(request.description()),
                 request.active() == null || request.active());
-        return SpecializationResponse.from(specializationRepository.saveAndFlush(specialization), 0);
+        return SpecializationResponse.from(specializationRepository.saveAndFlush(specialization), hospital.getId(),
+                hospital.getName(), department.getName(), 0);
     }
 
     @Transactional
@@ -160,14 +167,17 @@ public class MasterDataAdminService {
         requireAdmin(jwt);
         Specialization specialization = specializationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Specialization not found"));
+        Hospital hospital = requireHospital(request.hospitalId());
+        Department department = requireDepartment(request.departmentId());
+        requireDepartmentBelongsToHospital(department, hospital);
         String name = request.name().trim();
-        if (specializationRepository.existsByNameIgnoreCaseAndIdNot(name, id)) {
-            throw new ResourceConflictException("A specialization with this name already exists");
+        if (specializationRepository.existsByDepartmentIdAndNameIgnoreCaseAndIdNot(department.getId(), name, id)) {
+            throw new ResourceConflictException("This department already has a specialization with that name");
         }
-        specialization.update(name, optional(request.description()),
+        specialization.update(department.getId(), name, optional(request.description()),
                 request.active() == null ? specialization.isActive() : request.active());
-        return SpecializationResponse.from(specializationRepository.saveAndFlush(specialization),
-                doctorCountBySpecialization(id));
+        return SpecializationResponse.from(specializationRepository.saveAndFlush(specialization), hospital.getId(),
+                hospital.getName(), department.getName(), doctorCountBySpecialization(id));
     }
 
     private void requireAdmin(Jwt jwt) {
@@ -177,6 +187,28 @@ public class MasterDataAdminService {
     private Hospital requireHospital(UUID id) {
         return hospitalRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Hospital not found"));
+    }
+
+    private Department requireDepartment(UUID id) {
+        return departmentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Department not found"));
+    }
+
+    private void requireDepartmentBelongsToHospital(Department department, Hospital hospital) {
+        if (!department.getHospitalId().equals(hospital.getId())) {
+            throw new ResourceConflictException("The selected department does not belong to the selected hospital");
+        }
+    }
+
+    private SpecializationResponse specializationResponse(Specialization specialization,
+                                                          Map<UUID, Department> departments,
+                                                          Map<UUID, Hospital> hospitals) {
+        Department department = specialization.getDepartmentId() == null
+                ? null : departments.get(specialization.getDepartmentId());
+        Hospital hospital = department == null ? null : hospitals.get(department.getHospitalId());
+        return SpecializationResponse.from(specialization, hospital == null ? null : hospital.getId(),
+                hospital == null ? null : hospital.getName(), department == null ? null : department.getName(),
+                doctorCountBySpecialization(specialization.getId()));
     }
 
     private String optional(String value) {

@@ -9,6 +9,7 @@ import com.medisync.specialization.repository.SpecializationRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -30,5 +31,23 @@ class ReferenceDataServiceTest {
         assertThat(service.hospitals()).extracting("name").containsExactly("Active Hospital");
         assertThat(service.specializations()).extracting("name").containsExactly("Cardiology");
     }
-}
 
+    @Test
+    void scopedSpecializationsRequireDepartmentToBelongToHospital() {
+        HospitalRepository hospitals = mock(HospitalRepository.class);
+        DepartmentRepository departments = mock(DepartmentRepository.class);
+        SpecializationRepository specializations = mock(SpecializationRepository.class);
+        ReferenceDataService service = new ReferenceDataService(hospitals, departments, specializations);
+        Hospital hospital = new Hospital("Teaching Hospital", null, null, null, true);
+        Department department = new Department(hospital.getId(), "Cardiology", true);
+        Specialization specialization = new Specialization(
+                department.getId(), "Interventional Cardiology", null, true);
+        when(hospitals.findById(hospital.getId())).thenReturn(Optional.of(hospital));
+        when(departments.findById(department.getId())).thenReturn(Optional.of(department));
+        when(specializations.findActiveForDepartment(department.getId())).thenReturn(List.of(specialization));
+
+        assertThat(service.specializations(hospital.getId(), department.getId()))
+                .extracting("name")
+                .containsExactly("Interventional Cardiology");
+    }
+}

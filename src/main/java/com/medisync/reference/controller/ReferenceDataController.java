@@ -36,5 +36,10 @@ public class ReferenceDataController {
     public List<SpecializationReferenceResponse> specializations() {
         return service.specializations();
     }
-}
 
+    @GetMapping("/hospitals/{hospitalId}/departments/{departmentId}/specializations")
+    public List<SpecializationReferenceResponse> specializations(@PathVariable UUID hospitalId,
+                                                                 @PathVariable UUID departmentId) {
+        return service.specializations(hospitalId, departmentId);
+    }
+}

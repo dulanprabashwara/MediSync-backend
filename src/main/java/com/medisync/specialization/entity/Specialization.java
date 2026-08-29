@@ -18,6 +18,9 @@ public class Specialization {
     @Id
     private UUID id;
 
+    @Column(name = "department_id")
+    private UUID departmentId;
+
     @Column(nullable = false, length = 150)
     private String name;
 
@@ -37,11 +40,20 @@ public class Specialization {
     }
 
     public Specialization(String name, String description, boolean active) {
+        this(null, name, description, active);
+    }
+
+    public Specialization(UUID departmentId, String name, String description, boolean active) {
         this.id = UUID.randomUUID();
-        update(name, description, active);
+        update(departmentId, name, description, active);
     }
 
     public void update(String name, String description, boolean active) {
+        update(departmentId, name, description, active);
+    }
+
+    public void update(UUID departmentId, String name, String description, boolean active) {
+        this.departmentId = departmentId;
         this.name = name;
         this.description = description;
         this.active = active;
@@ -60,10 +72,10 @@ public class Specialization {
     }
 
     public UUID getId() { return id; }
+    public UUID getDepartmentId() { return departmentId; }
     public String getName() { return name; }
     public String getDescription() { return description; }
     public boolean isActive() { return active; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }
-

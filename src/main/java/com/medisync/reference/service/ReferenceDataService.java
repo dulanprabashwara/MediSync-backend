@@ -1,6 +1,8 @@
 package com.medisync.reference.service;
 
 import com.medisync.department.repository.DepartmentRepository;
+import com.medisync.department.entity.Department;
+import com.medisync.exception.InvalidRequestException;
 import com.medisync.exception.ResourceNotFoundException;
 import com.medisync.hospital.repository.HospitalRepository;
 import com.medisync.reference.dto.DepartmentReferenceResponse;
@@ -53,5 +55,21 @@ public class ReferenceDataService {
                         specialization.getName(), specialization.getDescription()))
                 .toList();
     }
-}
 
+    @Transactional(readOnly = true)
+    public List<SpecializationReferenceResponse> specializations(UUID hospitalId, UUID departmentId) {
+        hospitalRepository.findById(hospitalId)
+                .filter(hospital -> hospital.isActive())
+                .orElseThrow(() -> new ResourceNotFoundException("Active hospital not found"));
+        Department department = departmentRepository.findById(departmentId)
+                .filter(candidate -> candidate.isActive())
+                .orElseThrow(() -> new ResourceNotFoundException("Active department not found"));
+        if (!department.getHospitalId().equals(hospitalId)) {
+            throw new InvalidRequestException("The selected department does not belong to the selected hospital");
+        }
+        return specializationRepository.findActiveForDepartment(departmentId).stream()
+                .map(specialization -> new SpecializationReferenceResponse(specialization.getId(),
+                        specialization.getName(), specialization.getDescription()))
+                .toList();
+    }
+}

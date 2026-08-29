@@ -87,6 +87,22 @@ class DoctorProfileServiceTest {
     }
 
     @Test
+    void specializationMustBelongToSelectedDepartment() {
+        Department anotherDepartment = new Department(hospital.getId(), "Neurology", true);
+        Specialization wrongSpecialization = new Specialization(
+                anotherDepartment.getId(), "Clinical Neurology", null, true);
+        when(specializationRepository.findById(wrongSpecialization.getId()))
+                .thenReturn(Optional.of(wrongSpecialization));
+        DoctorProfileUpdateRequest update = new DoctorProfileUpdateRequest(
+                "SLMC-123", hospital.getId(), department.getId(), wrongSpecialization.getId(),
+                "MBBS", 4, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.updateProfile(jwt, update))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("specialization does not belong");
+    }
+
+    @Test
     void incompleteProfileCannotBeSubmitted() {
         assertThatThrownBy(() -> service.submitForVerification(jwt))
                 .isInstanceOf(InvalidRequestException.class)

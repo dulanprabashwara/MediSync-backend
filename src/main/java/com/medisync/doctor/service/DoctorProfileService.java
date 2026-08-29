@@ -81,7 +81,8 @@ public class DoctorProfileService {
             throw new ResourceConflictException("This medical registration number is already in use");
         }
 
-        validateReferences(request.hospitalId(), request.departmentId(), request.specializationId(), true);
+        validateReferences(request.hospitalId(), request.departmentId(), request.specializationId(), true,
+                profile.getDepartmentId(), profile.getSpecializationId());
         profile.updateProfessionalProfile(registrationNumber, request.hospitalId(), request.departmentId(),
                 request.specializationId(), qualifications, request.yearsOfExperience(), optional(request.bio()));
         profile.updatePaymentDetails(optional(request.bankAccountHolder()), optional(request.bankName()),
@@ -103,7 +104,8 @@ public class DoctorProfileService {
         if (!profile.isComplete()) {
             throw new InvalidRequestException("Complete all required professional fields before submitting");
         }
-        validateReferences(profile.getHospitalId(), profile.getDepartmentId(), profile.getSpecializationId(), true);
+        validateReferences(profile.getHospitalId(), profile.getDepartmentId(), profile.getSpecializationId(), true,
+                profile.getDepartmentId(), profile.getSpecializationId());
         boolean resubmission = profile.getVerificationStatus() == VerificationStatus.REJECTED;
         profile.submitForVerification();
         DoctorProfile saved = doctorProfileRepository.saveAndFlush(profile);
@@ -122,7 +124,8 @@ public class DoctorProfileService {
                 .orElseThrow(() -> new ResourceNotFoundException("Doctor profile not found"));
     }
 
-    private void validateReferences(UUID hospitalId, UUID departmentId, UUID specializationId, boolean requireActive) {
+    private void validateReferences(UUID hospitalId, UUID departmentId, UUID specializationId, boolean requireActive,
+                                    UUID existingDepartmentId, UUID existingSpecializationId) {
         if (hospitalId == null && departmentId != null) {
             throw new InvalidRequestException("Select a hospital before selecting a department");
         }
@@ -136,9 +139,16 @@ public class DoctorProfileService {
             throw new InvalidRequestException("The selected department does not belong to the selected hospital");
         }
         if (specializationId != null) {
-            specializationRepository.findById(specializationId)
+            Specialization specialization = specializationRepository.findById(specializationId)
                     .filter(candidate -> !requireActive || candidate.isActive())
                     .orElseThrow(() -> new InvalidRequestException("Select an active specialization"));
+            if (specialization.getDepartmentId() != null
+                    && !specialization.getDepartmentId().equals(departmentId)
+                    && !(Objects.equals(departmentId, existingDepartmentId)
+                    && Objects.equals(specializationId, existingSpecializationId))) {
+                throw new InvalidRequestException(
+                        "The selected specialization does not belong to the selected department");
+            }
         }
     }
 

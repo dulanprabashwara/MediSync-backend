@@ -7,6 +7,10 @@ import java.util.UUID;
 
 public record SpecializationResponse(
         UUID id,
+        UUID hospitalId,
+        String hospitalName,
+        UUID departmentId,
+        String departmentName,
         String name,
         String description,
         boolean active,
@@ -15,11 +19,17 @@ public record SpecializationResponse(
         long doctorCount
 ) {
     public static SpecializationResponse from(Specialization specialization) {
-        return from(specialization, 0);
+        return from(specialization, null, null, null, 0);
     }
 
     public static SpecializationResponse from(Specialization specialization, long doctorCount) {
-        return new SpecializationResponse(specialization.getId(), specialization.getName(),
+        return from(specialization, null, null, null, doctorCount);
+    }
+
+    public static SpecializationResponse from(Specialization specialization, UUID hospitalId, String hospitalName,
+                                               String departmentName, long doctorCount) {
+        return new SpecializationResponse(specialization.getId(), hospitalId, hospitalName,
+                specialization.getDepartmentId(), departmentName, specialization.getName(),
                 specialization.getDescription(), specialization.isActive(), specialization.getCreatedAt(),
                 specialization.getUpdatedAt(), doctorCount);
     }
