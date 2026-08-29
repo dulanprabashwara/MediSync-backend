@@ -23,6 +23,7 @@ import com.medisync.user.repository.AppUserRepository;
 import com.medisync.user.repository.DoctorProfileRepository;
 import com.medisync.user.service.CurrentUserService;
 import com.medisync.media.MediaUrlService;
+import com.medisync.reference.dto.SpecializationReferenceResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -36,6 +37,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import java.util.Comparator;
 
 @Service
 public class PatientDoctorDiscoveryService {
@@ -109,6 +111,30 @@ public class PatientDoctorDiscoveryService {
     public DoctorDetailsResponse details(Jwt jwt, UUID doctorId) {
         requirePatient(jwt);
         return toDetails(requireDiscoverableDoctor(doctorId));
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<SpecializationReferenceResponse> availableSpecializations(
+            Jwt jwt, UUID hospitalId, UUID departmentId) {
+        requirePatient(jwt);
+        Hospital hospital = hospitalRepository.findById(hospitalId)
+                .filter(Hospital::isActive)
+                .orElseThrow(() -> new InvalidRequestException("Select an active hospital"));
+        Department department = departmentRepository.findById(departmentId)
+                .filter(Department::isActive)
+                .orElseThrow(() -> new InvalidRequestException("Select an active department"));
+        if (!department.getHospitalId().equals(hospital.getId())) {
+            throw new InvalidRequestException("The selected department does not belong to the selected hospital");
+        }
+
+        return specializationRepository
+                .findAllById(doctorProfileRepository.findDiscoverableSpecializationIds(hospitalId, departmentId))
+                .stream()
+                .filter(Specialization::isActive)
+                .sorted(Comparator.comparing(Specialization::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(value -> new SpecializationReferenceResponse(
+                        value.getId(), value.getName(), value.getDescription()))
+                .toList();
     }
 
     @Transactional(readOnly = true)

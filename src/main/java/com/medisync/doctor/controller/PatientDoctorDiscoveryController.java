@@ -5,6 +5,7 @@ import com.medisync.common.dto.PageResponse;
 import com.medisync.doctor.dto.DoctorDetailsResponse;
 import com.medisync.doctor.dto.DoctorSummaryResponse;
 import com.medisync.doctor.service.PatientDoctorDiscoveryService;
+import com.medisync.reference.dto.SpecializationReferenceResponse;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -38,6 +39,14 @@ public class PatientDoctorDiscoveryController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         return service.search(jwt, q, hospitalId, departmentId, specializationId, page, size);
+    }
+
+    @GetMapping("/specializations")
+    public List<SpecializationReferenceResponse> specializations(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam UUID hospitalId,
+            @RequestParam UUID departmentId) {
+        return service.availableSpecializations(jwt, hospitalId, departmentId);
     }
 
     @GetMapping("/{doctorId}")

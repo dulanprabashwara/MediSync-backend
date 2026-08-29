@@ -90,4 +90,23 @@ public interface DoctorProfileRepository extends JpaRepository<DoctorProfile, UU
                                            @Param("departmentId") UUID departmentId,
                                            @Param("specializationId") UUID specializationId,
                                            Pageable pageable);
+
+    @Query(value = """
+            SELECT DISTINCT profile.specialization_id
+            FROM doctor_profiles profile
+            JOIN app_users app_user ON app_user.id = profile.user_id
+            JOIN hospitals hospital ON hospital.id = profile.hospital_id
+            JOIN departments department ON department.id = profile.department_id
+            JOIN specializations specialization ON specialization.id = profile.specialization_id
+            WHERE app_user.role = 'DOCTOR'
+              AND app_user.status = 'ACTIVE'
+              AND profile.verification_status = 'VERIFIED'
+              AND profile.hospital_id = :hospitalId
+              AND profile.department_id = :departmentId
+              AND hospital.active = TRUE
+              AND department.active = TRUE
+              AND specialization.active = TRUE
+            """, nativeQuery = true)
+    List<UUID> findDiscoverableSpecializationIds(@Param("hospitalId") UUID hospitalId,
+                                                 @Param("departmentId") UUID departmentId);
 }
