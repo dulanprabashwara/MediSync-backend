@@ -12,6 +12,7 @@ import com.medisync.user.entity.UserRole;
 import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.repository.PharmacistProfileRepository;
 import com.medisync.user.service.CurrentUserService;
+import com.medisync.notification.service.ProfessionalVerificationNotificationService;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,11 +22,14 @@ public class PharmacistProfileService {
 
     private final CurrentUserService currentUserService;
     private final PharmacistProfileRepository pharmacistProfileRepository;
+    private final ProfessionalVerificationNotificationService verificationNotifications;
 
     public PharmacistProfileService(CurrentUserService currentUserService,
-                                    PharmacistProfileRepository pharmacistProfileRepository) {
+                                    PharmacistProfileRepository pharmacistProfileRepository,
+                                    ProfessionalVerificationNotificationService verificationNotifications) {
         this.currentUserService = currentUserService;
         this.pharmacistProfileRepository = pharmacistProfileRepository;
+        this.verificationNotifications = verificationNotifications;
     }
 
     @Transactional(readOnly = true)
@@ -72,8 +76,12 @@ public class PharmacistProfileService {
         if (!profile.isComplete()) {
             throw new InvalidRequestException("Complete the registration number, pharmacy name, and pharmacy address before submitting");
         }
+        boolean resubmission = profile.getVerificationStatus() == VerificationStatus.REJECTED;
         profile.submitForVerification();
-        return response(pharmacistProfileRepository.saveAndFlush(profile), user);
+        PharmacistProfile saved = pharmacistProfileRepository.saveAndFlush(profile);
+        verificationNotifications.submitted(user, saved.getId(), resubmission,
+                saved.getSubmittedForVerificationAt());
+        return response(saved, user);
     }
 
     private AppUser requirePharmacist(Jwt jwt) {

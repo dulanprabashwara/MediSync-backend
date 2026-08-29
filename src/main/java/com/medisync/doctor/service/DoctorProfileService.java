@@ -18,6 +18,7 @@ import com.medisync.user.entity.UserRole;
 import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.repository.DoctorProfileRepository;
 import com.medisync.user.service.CurrentUserService;
+import com.medisync.notification.service.ProfessionalVerificationNotificationService;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,17 +34,20 @@ public class DoctorProfileService {
     private final HospitalRepository hospitalRepository;
     private final DepartmentRepository departmentRepository;
     private final SpecializationRepository specializationRepository;
+    private final ProfessionalVerificationNotificationService verificationNotifications;
 
     public DoctorProfileService(CurrentUserService currentUserService,
                                 DoctorProfileRepository doctorProfileRepository,
                                 HospitalRepository hospitalRepository,
                                 DepartmentRepository departmentRepository,
-                                SpecializationRepository specializationRepository) {
+                                SpecializationRepository specializationRepository,
+                                ProfessionalVerificationNotificationService verificationNotifications) {
         this.currentUserService = currentUserService;
         this.doctorProfileRepository = doctorProfileRepository;
         this.hospitalRepository = hospitalRepository;
         this.departmentRepository = departmentRepository;
         this.specializationRepository = specializationRepository;
+        this.verificationNotifications = verificationNotifications;
     }
 
     @Transactional(readOnly = true)
@@ -100,8 +104,12 @@ public class DoctorProfileService {
             throw new InvalidRequestException("Complete all required professional fields before submitting");
         }
         validateReferences(profile.getHospitalId(), profile.getDepartmentId(), profile.getSpecializationId(), true);
+        boolean resubmission = profile.getVerificationStatus() == VerificationStatus.REJECTED;
         profile.submitForVerification();
-        return response(doctorProfileRepository.saveAndFlush(profile));
+        DoctorProfile saved = doctorProfileRepository.saveAndFlush(profile);
+        verificationNotifications.submitted(user, saved.getId(), resubmission,
+                saved.getSubmittedForVerificationAt());
+        return response(saved);
     }
 
     private AppUser requireDoctor(Jwt jwt) {
@@ -177,4 +185,3 @@ public class DoctorProfileService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 }
-

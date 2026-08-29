@@ -18,6 +18,7 @@ import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.repository.AppUserRepository;
 import com.medisync.user.repository.DoctorProfileRepository;
 import com.medisync.user.service.CurrentUserService;
+import com.medisync.notification.service.ProfessionalVerificationNotificationService;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,19 +35,22 @@ public class AdminDoctorVerificationService {
     private final HospitalRepository hospitalRepository;
     private final DepartmentRepository departmentRepository;
     private final SpecializationRepository specializationRepository;
+    private final ProfessionalVerificationNotificationService verificationNotifications;
 
     public AdminDoctorVerificationService(CurrentUserService currentUserService,
                                           DoctorProfileRepository doctorProfileRepository,
                                           AppUserRepository appUserRepository,
                                           HospitalRepository hospitalRepository,
                                           DepartmentRepository departmentRepository,
-                                          SpecializationRepository specializationRepository) {
+                                          SpecializationRepository specializationRepository,
+                                          ProfessionalVerificationNotificationService verificationNotifications) {
         this.currentUserService = currentUserService;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appUserRepository = appUserRepository;
         this.hospitalRepository = hospitalRepository;
         this.departmentRepository = departmentRepository;
         this.specializationRepository = specializationRepository;
+        this.verificationNotifications = verificationNotifications;
     }
 
     @Transactional(readOnly = true)
@@ -80,18 +84,25 @@ public class AdminDoctorVerificationService {
         doctor.activate();
         doctorProfileRepository.saveAndFlush(profile);
         appUserRepository.saveAndFlush(doctor);
+        verificationNotifications.reviewed(admin, doctor, profile.getId(), true,
+                profile.getSubmittedForVerificationAt());
         return response(profile);
     }
 
     @Transactional
     public AdminDoctorReviewResponse reject(Jwt jwt, UUID doctorId, String reason) {
-        requireAdmin(jwt);
+        AppUser admin = requireAdmin(jwt);
         if (reason == null || reason.isBlank()) {
             throw new InvalidRequestException("A rejection reason is required");
         }
         DoctorProfile profile = lockPendingSubmission(doctorId);
         profile.reject(reason.trim());
-        return response(doctorProfileRepository.saveAndFlush(profile));
+        DoctorProfile saved = doctorProfileRepository.saveAndFlush(profile);
+        AppUser doctor = appUserRepository.findById(profile.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor account not found"));
+        verificationNotifications.reviewed(admin, doctor, saved.getId(), false,
+                saved.getSubmittedForVerificationAt());
+        return response(saved);
     }
 
     private AppUser requireAdmin(Jwt jwt) {

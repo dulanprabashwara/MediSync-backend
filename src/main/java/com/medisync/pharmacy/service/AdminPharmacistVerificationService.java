@@ -12,6 +12,7 @@ import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.repository.AppUserRepository;
 import com.medisync.user.repository.PharmacistProfileRepository;
 import com.medisync.user.service.CurrentUserService;
+import com.medisync.notification.service.ProfessionalVerificationNotificationService;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,13 +26,16 @@ public class AdminPharmacistVerificationService {
     private final CurrentUserService currentUserService;
     private final PharmacistProfileRepository pharmacistProfileRepository;
     private final AppUserRepository appUserRepository;
+    private final ProfessionalVerificationNotificationService verificationNotifications;
 
     public AdminPharmacistVerificationService(CurrentUserService currentUserService,
                                               PharmacistProfileRepository pharmacistProfileRepository,
-                                              AppUserRepository appUserRepository) {
+                                              AppUserRepository appUserRepository,
+                                              ProfessionalVerificationNotificationService verificationNotifications) {
         this.currentUserService = currentUserService;
         this.pharmacistProfileRepository = pharmacistProfileRepository;
         this.appUserRepository = appUserRepository;
+        this.verificationNotifications = verificationNotifications;
     }
 
     @Transactional(readOnly = true)
@@ -64,18 +68,25 @@ public class AdminPharmacistVerificationService {
         pharmacist.activate();
         pharmacistProfileRepository.saveAndFlush(profile);
         appUserRepository.saveAndFlush(pharmacist);
+        verificationNotifications.reviewed(admin, pharmacist, profile.getId(), true,
+                profile.getSubmittedForVerificationAt());
         return response(profile, pharmacist);
     }
 
     @Transactional
     public AdminPharmacistReviewResponse reject(Jwt jwt, UUID pharmacistId, String reason) {
-        requireAdmin(jwt);
+        AppUser admin = requireAdmin(jwt);
         if (reason == null || reason.isBlank()) {
             throw new InvalidRequestException("A rejection reason is required");
         }
         PharmacistProfile profile = lockPendingSubmission(pharmacistId);
         profile.reject(reason.trim());
-        return response(pharmacistProfileRepository.saveAndFlush(profile));
+        PharmacistProfile saved = pharmacistProfileRepository.saveAndFlush(profile);
+        AppUser pharmacist = appUserRepository.findById(profile.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Pharmacist account not found"));
+        verificationNotifications.reviewed(admin, pharmacist, saved.getId(), false,
+                saved.getSubmittedForVerificationAt());
+        return response(saved, pharmacist);
     }
 
     private AppUser requireAdmin(Jwt jwt) {

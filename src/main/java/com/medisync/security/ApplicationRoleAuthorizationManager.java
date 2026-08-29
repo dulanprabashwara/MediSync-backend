@@ -17,19 +17,24 @@ import java.util.function.Supplier;
 public class ApplicationRoleAuthorizationManager implements AuthorizationManager<RequestAuthorizationContext> {
 
     private final AppUserRepository appUserRepository;
+    private final ProfessionalVerificationAccess professionalVerificationAccess;
     private final UserRole requiredRole;
     private final boolean allowPendingVerification;
 
-    public ApplicationRoleAuthorizationManager(AppUserRepository appUserRepository, UserRole requiredRole) {
-        this(appUserRepository, requiredRole, false);
+    public ApplicationRoleAuthorizationManager(AppUserRepository appUserRepository,
+                                               ProfessionalVerificationAccess professionalVerificationAccess,
+                                               UserRole requiredRole) {
+        this(appUserRepository, professionalVerificationAccess, requiredRole, false);
     }
 
     public ApplicationRoleAuthorizationManager(
             AppUserRepository appUserRepository,
+            ProfessionalVerificationAccess professionalVerificationAccess,
             UserRole requiredRole,
             boolean allowPendingVerification
     ) {
         this.appUserRepository = appUserRepository;
+        this.professionalVerificationAccess = professionalVerificationAccess;
         this.requiredRole = requiredRole;
         this.allowPendingVerification = allowPendingVerification;
     }
@@ -52,6 +57,9 @@ public class ApplicationRoleAuthorizationManager implements AuthorizationManager
                     .filter(candidate -> candidate.getStatus() == AccountStatus.ACTIVE
                             || (allowPendingVerification
                             && candidate.getStatus() == AccountStatus.PENDING_VERIFICATION))
+                    .filter(candidate -> allowPendingVerification
+                            || (requiredRole != UserRole.DOCTOR && requiredRole != UserRole.PHARMACIST)
+                            || professionalVerificationAccess.isVerified(candidate))
                     .isPresent();
             return new AuthorizationDecision(granted);
         } catch (IllegalArgumentException | NullPointerException exception) {

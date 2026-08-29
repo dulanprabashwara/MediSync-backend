@@ -83,7 +83,7 @@ class PatientDoctorDiscoveryServiceTest {
     }
 
     @Test
-    void activeVerifiedDoctorAppearsWithoutPrivateContactFields() {
+    void activeVerifiedDoctorAppearsWithPublicPhoneButWithoutPrivateIdentityFields() {
         allowPatient();
         when(doctorProfileRepository.searchDiscoverable(null, null, null, null, Pageable.ofSize(10)))
                 .thenReturn(new PageImpl<>(java.util.List.of(doctor), Pageable.ofSize(10), 1));
@@ -93,8 +93,9 @@ class PatientDoctorDiscoveryServiceTest {
 
         assertThat(result.content()).hasSize(1);
         assertThat(result.content().get(0).displayName()).isEqualTo("Dr. Asha Perera");
+        assertThat(result.content().get(0).phone()).isEqualTo("private-phone");
         assertThat(Arrays.stream(DoctorSummaryResponse.class.getRecordComponents()).map(component -> component.getName()))
-                .doesNotContain("email", "phone", "userId", "authUserId", "verifiedBy");
+                .doesNotContain("email", "userId", "authUserId", "verifiedBy");
     }
 
     @Test

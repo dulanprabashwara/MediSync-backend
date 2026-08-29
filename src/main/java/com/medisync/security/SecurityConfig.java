@@ -34,10 +34,14 @@ import java.util.List;
 public class SecurityConfig {
 
     private final AppUserRepository appUserRepository;
+    private final ProfessionalVerificationAccess professionalVerificationAccess;
     private final ObjectMapper objectMapper;
 
-    public SecurityConfig(AppUserRepository appUserRepository, ObjectMapper objectMapper) {
+    public SecurityConfig(AppUserRepository appUserRepository,
+                          ProfessionalVerificationAccess professionalVerificationAccess,
+                          ObjectMapper objectMapper) {
         this.appUserRepository = appUserRepository;
+        this.professionalVerificationAccess = professionalVerificationAccess;
         this.objectMapper = objectMapper;
     }
 
@@ -52,25 +56,25 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers("/ws", "/ws/**").permitAll()
                         .requestMatchers("/api/patient/profile")
-                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.PATIENT))
+                        .access(roleAccess(UserRole.PATIENT))
                         .requestMatchers("/api/pharmacist/profile")
-                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.PHARMACIST, true))
+                        .access(roleAccess(UserRole.PHARMACIST, true))
                         .requestMatchers("/api/pharmacist/professional-profile", "/api/pharmacist/professional-profile/**")
-                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.PHARMACIST, true))
+                        .access(roleAccess(UserRole.PHARMACIST, true))
                         .requestMatchers("/api/admin/profile")
-                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.ADMIN))
+                        .access(roleAccess(UserRole.ADMIN))
                         .requestMatchers("/api/reference/**")
                         .access(new ApplicationAccountAuthorizationManager(appUserRepository))
                         .requestMatchers("/api/doctor/profile", "/api/doctor/profile/**")
-                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.DOCTOR, true))
+                        .access(roleAccess(UserRole.DOCTOR, true))
                         .requestMatchers("/api/patient/**")
-                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.PATIENT))
+                        .access(roleAccess(UserRole.PATIENT))
                         .requestMatchers("/api/doctor/**")
-                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.DOCTOR))
+                        .access(roleAccess(UserRole.DOCTOR))
                         .requestMatchers("/api/pharmacist/**")
-                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.PHARMACIST))
+                        .access(roleAccess(UserRole.PHARMACIST))
                         .requestMatchers("/api/admin/**")
-                        .access(new ApplicationRoleAuthorizationManager(appUserRepository, UserRole.ADMIN))
+                        .access(roleAccess(UserRole.ADMIN))
                         .requestMatchers("/api/users/me/account-status").authenticated()
                         .requestMatchers("/api/users/me/profile-image")
                         .access(new ApplicationAccountAuthorizationManager(appUserRepository))
@@ -89,6 +93,15 @@ public class SecurityConfig {
                                         "FORBIDDEN", "You do not have permission to access this resource"))
                 );
         return http.build();
+    }
+
+    private ApplicationRoleAuthorizationManager roleAccess(UserRole role) {
+        return roleAccess(role, false);
+    }
+
+    private ApplicationRoleAuthorizationManager roleAccess(UserRole role, boolean allowPendingVerification) {
+        return new ApplicationRoleAuthorizationManager(appUserRepository, professionalVerificationAccess,
+                role, allowPendingVerification);
     }
 
     @Bean

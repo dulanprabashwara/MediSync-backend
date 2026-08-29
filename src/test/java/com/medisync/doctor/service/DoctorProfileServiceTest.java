@@ -17,6 +17,7 @@ import com.medisync.user.entity.UserRole;
 import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.repository.DoctorProfileRepository;
 import com.medisync.user.service.CurrentUserService;
+import com.medisync.notification.service.ProfessionalVerificationNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -37,6 +38,7 @@ class DoctorProfileServiceTest {
     private HospitalRepository hospitalRepository;
     private DepartmentRepository departmentRepository;
     private SpecializationRepository specializationRepository;
+    private ProfessionalVerificationNotificationService verificationNotifications;
     private DoctorProfileService service;
     private AppUser doctor;
     private DoctorProfile profile;
@@ -52,8 +54,9 @@ class DoctorProfileServiceTest {
         hospitalRepository = mock(HospitalRepository.class);
         departmentRepository = mock(DepartmentRepository.class);
         specializationRepository = mock(SpecializationRepository.class);
+        verificationNotifications = mock(ProfessionalVerificationNotificationService.class);
         service = new DoctorProfileService(currentUserService, doctorProfileRepository, hospitalRepository,
-                departmentRepository, specializationRepository);
+                departmentRepository, specializationRepository, verificationNotifications);
 
         doctor = new AppUser(UUID.randomUUID(), "doctor@example.com", "Nimal", "Perera", null,
                 UserRole.DOCTOR, AccountStatus.PENDING_VERIFICATION);
@@ -135,4 +138,3 @@ class DoctorProfileServiceTest {
                 "MBBS", 4, null, null, null, null, null);
     }
 }
-

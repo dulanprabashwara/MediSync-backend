@@ -23,6 +23,8 @@ import static org.mockito.Mockito.when;
 class ApplicationRoleAuthorizationManagerTest {
 
     private final AppUserRepository repository = mock(AppUserRepository.class);
+    private final ProfessionalVerificationAccess professionalVerificationAccess =
+            mock(ProfessionalVerificationAccess.class);
     private final RequestAuthorizationContext context = mock(RequestAuthorizationContext.class);
 
     @Test
@@ -31,7 +33,8 @@ class ApplicationRoleAuthorizationManagerTest {
         JwtAuthenticationToken authentication = authentication(authUserId);
         when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(user(authUserId, UserRole.PATIENT, AccountStatus.ACTIVE)));
 
-        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(repository, UserRole.DOCTOR)
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(
+                repository, professionalVerificationAccess, UserRole.DOCTOR)
                 .check(() -> authentication, context);
 
         assertThat(decision.isGranted()).isFalse();
@@ -44,7 +47,8 @@ class ApplicationRoleAuthorizationManagerTest {
         when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
                 user(authUserId, UserRole.DOCTOR, AccountStatus.PENDING_VERIFICATION)));
 
-        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(repository, UserRole.DOCTOR, true)
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(
+                repository, professionalVerificationAccess, UserRole.DOCTOR, true)
                 .check(() -> authentication, context);
 
         assertThat(decision.isGranted()).isTrue();
@@ -57,7 +61,8 @@ class ApplicationRoleAuthorizationManagerTest {
         when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
                 user(authUserId, UserRole.DOCTOR, AccountStatus.PENDING_VERIFICATION)));
 
-        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(repository, UserRole.DOCTOR)
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(
+                repository, professionalVerificationAccess, UserRole.DOCTOR)
                 .check(() -> authentication, context);
 
         assertThat(decision.isGranted()).isFalse();
@@ -70,7 +75,8 @@ class ApplicationRoleAuthorizationManagerTest {
         when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
                 user(authUserId, UserRole.PATIENT, AccountStatus.SUSPENDED)));
 
-        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(repository, UserRole.PATIENT)
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(
+                repository, professionalVerificationAccess, UserRole.PATIENT)
                 .check(() -> authentication, context);
 
         assertThat(decision.isGranted()).isFalse();
@@ -83,7 +89,68 @@ class ApplicationRoleAuthorizationManagerTest {
         when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
                 user(authUserId, UserRole.PATIENT, AccountStatus.BANNED)));
 
-        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(repository, UserRole.PATIENT)
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(
+                repository, professionalVerificationAccess, UserRole.PATIENT)
+                .check(() -> authentication, context);
+
+        assertThat(decision.isGranted()).isFalse();
+    }
+
+    @Test
+    void activeProfessionalWithoutVerifiedProfileCannotAccessOperationalRoutes() {
+        UUID authUserId = UUID.randomUUID();
+        JwtAuthenticationToken authentication = authentication(authUserId);
+        AppUser doctor = user(authUserId, UserRole.DOCTOR, AccountStatus.ACTIVE);
+        when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(doctor));
+        when(professionalVerificationAccess.isVerified(doctor)).thenReturn(false);
+
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(
+                repository, professionalVerificationAccess, UserRole.DOCTOR)
+                .check(() -> authentication, context);
+
+        assertThat(decision.isGranted()).isFalse();
+    }
+
+    @Test
+    void activeVerifiedDoctorCanAccessOperationalRoutes() {
+        UUID authUserId = UUID.randomUUID();
+        JwtAuthenticationToken authentication = authentication(authUserId);
+        AppUser doctor = user(authUserId, UserRole.DOCTOR, AccountStatus.ACTIVE);
+        when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(doctor));
+        when(professionalVerificationAccess.isVerified(doctor)).thenReturn(true);
+
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(
+                repository, professionalVerificationAccess, UserRole.DOCTOR)
+                .check(() -> authentication, context);
+
+        assertThat(decision.isGranted()).isTrue();
+    }
+
+    @Test
+    void activeVerifiedPharmacistCanAccessOperationalRoutes() {
+        UUID authUserId = UUID.randomUUID();
+        JwtAuthenticationToken authentication = authentication(authUserId);
+        AppUser pharmacist = user(authUserId, UserRole.PHARMACIST, AccountStatus.ACTIVE);
+        when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(pharmacist));
+        when(professionalVerificationAccess.isVerified(pharmacist)).thenReturn(true);
+
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(
+                repository, professionalVerificationAccess, UserRole.PHARMACIST)
+                .check(() -> authentication, context);
+
+        assertThat(decision.isGranted()).isTrue();
+    }
+
+    @Test
+    void bannedVerifiedProfessionalCannotAccessOperationalRoutes() {
+        UUID authUserId = UUID.randomUUID();
+        JwtAuthenticationToken authentication = authentication(authUserId);
+        AppUser doctor = user(authUserId, UserRole.DOCTOR, AccountStatus.BANNED);
+        when(repository.findByAuthUserId(authUserId)).thenReturn(Optional.of(doctor));
+        when(professionalVerificationAccess.isVerified(doctor)).thenReturn(true);
+
+        AuthorizationDecision decision = new ApplicationRoleAuthorizationManager(
+                repository, professionalVerificationAccess, UserRole.DOCTOR)
                 .check(() -> authentication, context);
 
         assertThat(decision.isGranted()).isFalse();

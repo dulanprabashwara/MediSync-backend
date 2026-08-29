@@ -9,6 +9,7 @@ import com.medisync.user.entity.UserRole;
 import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.repository.PharmacistProfileRepository;
 import com.medisync.user.service.CurrentUserService;
+import com.medisync.notification.service.ProfessionalVerificationNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -27,6 +28,7 @@ class PharmacistProfileServiceTest {
     private CurrentUserService currentUserService;
     private PharmacistProfileRepository repository;
     private PharmacistProfileService service;
+    private ProfessionalVerificationNotificationService verificationNotifications;
     private AppUser user;
     private PharmacistProfile profile;
     private Jwt jwt;
@@ -35,7 +37,8 @@ class PharmacistProfileServiceTest {
     void setUp() {
         currentUserService = mock(CurrentUserService.class);
         repository = mock(PharmacistProfileRepository.class);
-        service = new PharmacistProfileService(currentUserService, repository);
+        verificationNotifications = mock(ProfessionalVerificationNotificationService.class);
+        service = new PharmacistProfileService(currentUserService, repository, verificationNotifications);
         user = new AppUser(UUID.randomUUID(), "pharmacist@example.com", "Saman", "Perera", null,
                 UserRole.PHARMACIST, AccountStatus.PENDING_VERIFICATION);
         profile = new PharmacistProfile(user.getId());

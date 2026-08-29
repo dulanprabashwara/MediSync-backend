@@ -55,6 +55,9 @@ class SecurityConfigTest {
     private AppUserRepository appUserRepository;
 
     @MockitoBean
+    private ProfessionalVerificationAccess professionalVerificationAccess;
+
+    @MockitoBean
     private UserService userService;
 
     @MockitoBean
@@ -90,6 +93,47 @@ class SecurityConfigTest {
                         UserRole.PATIENT, AccountStatus.ACTIVE)));
 
         mockMvc.perform(get("/api/doctor/profile")
+                        .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+    }
+
+    @Test
+    void patientCannotSubmitDoctorProfessionalVerification() throws Exception {
+        UUID authUserId = UUID.randomUUID();
+        when(appUserRepository.findByAuthUserId(authUserId)).thenReturn(Optional.of(
+                new AppUser(authUserId, "patient@example.com", "John", "Silva", null,
+                        UserRole.PATIENT, AccountStatus.ACTIVE)));
+
+        mockMvc.perform(post("/api/doctor/profile/submit-verification")
+                        .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+    }
+
+    @Test
+    void activeButUnverifiedDoctorCannotUseOperationalRoutes() throws Exception {
+        UUID authUserId = UUID.randomUUID();
+        AppUser doctor = new AppUser(authUserId, "doctor@example.com", "Nimal", "Perera", null,
+                UserRole.DOCTOR, AccountStatus.ACTIVE);
+        when(appUserRepository.findByAuthUserId(authUserId)).thenReturn(Optional.of(doctor));
+        when(professionalVerificationAccess.isVerified(doctor)).thenReturn(false);
+
+        mockMvc.perform(get("/api/doctor/appointments")
+                        .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+    }
+
+    @Test
+    void activeButUnverifiedPharmacistCannotUseOperationalRoutes() throws Exception {
+        UUID authUserId = UUID.randomUUID();
+        AppUser pharmacist = new AppUser(authUserId, "pharmacist@example.com", "Ravi", "Fernando", null,
+                UserRole.PHARMACIST, AccountStatus.ACTIVE);
+        when(appUserRepository.findByAuthUserId(authUserId)).thenReturn(Optional.of(pharmacist));
+        when(professionalVerificationAccess.isVerified(pharmacist)).thenReturn(false);
+
+        mockMvc.perform(get("/api/pharmacist/dispensations")
                         .with(jwt().jwt(token -> token.subject(authUserId.toString()))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error").value("FORBIDDEN"));

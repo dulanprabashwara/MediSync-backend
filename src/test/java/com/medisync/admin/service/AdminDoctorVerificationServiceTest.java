@@ -16,6 +16,7 @@ import com.medisync.user.entity.VerificationStatus;
 import com.medisync.user.repository.AppUserRepository;
 import com.medisync.user.repository.DoctorProfileRepository;
 import com.medisync.user.service.CurrentUserService;
+import com.medisync.notification.service.ProfessionalVerificationNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
@@ -40,6 +41,7 @@ class AdminDoctorVerificationServiceTest {
     private HospitalRepository hospitalRepository;
     private DepartmentRepository departmentRepository;
     private SpecializationRepository specializationRepository;
+    private ProfessionalVerificationNotificationService verificationNotifications;
     private AdminDoctorVerificationService service;
     private AppUser admin;
     private AppUser doctor;
@@ -57,8 +59,9 @@ class AdminDoctorVerificationServiceTest {
         hospitalRepository = mock(HospitalRepository.class);
         departmentRepository = mock(DepartmentRepository.class);
         specializationRepository = mock(SpecializationRepository.class);
+        verificationNotifications = mock(ProfessionalVerificationNotificationService.class);
         service = new AdminDoctorVerificationService(currentUserService, doctorProfileRepository, appUserRepository,
-                hospitalRepository, departmentRepository, specializationRepository);
+                hospitalRepository, departmentRepository, specializationRepository, verificationNotifications);
 
         admin = new AppUser(UUID.randomUUID(), "admin@example.com", "Admin", "User", null,
                 UserRole.ADMIN, AccountStatus.ACTIVE);
@@ -128,4 +131,3 @@ class AdminDoctorVerificationServiceTest {
         verify(doctorProfileRepository, never()).findByIdForUpdate(any());
     }
 }
-
